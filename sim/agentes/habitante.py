@@ -112,7 +112,7 @@ class Habitante(AgenteBase):
                 and percepcion["dinero"] >= c["costo"]):
             opciones["cocinar"] = self.utilidad(self.gusto["cocinar"], c["costo"], c["tiempo"])
         if percepcion["dinero"] >= s["costo"]:
-            u = self.utilidad(s["gusto"], s["costo"], s["tiempo"])
+            u = self.utilidad(self.gusto["salir"], s["costo"], s["tiempo"])
             opciones["salir"] = u - (s["penalizacion_lluvia"] if percepcion["lluvia"] else 0.0)
         if percepcion["restaurantes_asequibles"]:
             opciones["pedir"] = self.politica.mejor_valor(percepcion["restaurantes_asequibles"])

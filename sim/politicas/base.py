@@ -8,12 +8,10 @@ from __future__ import annotations
 
 import random
 
-# Acciones de alto nivel del repartidor (índices fijos para la tabla Q).
+# Criterios de las heurísticas fijas (solo para identificar la acción tomada).
 # "urgente" (el pedido más viejo) se agregó porque en las pruebas el más
-# cercano dejaba vencer los pedidos lejanos: hay un dilema real entre ser
-# eficiente, ganar más y no dejar que se cancelen.
+# cercano dejaba vencer los pedidos lejanos.
 CERCANO, MEJOR_PAGADO, URGENTE, ESPERAR = 0, 1, 2, 3
-NOMBRES_ACCIONES = ("cercano", "mejor_pagado", "urgente", "esperar")
 
 
 class Politica:

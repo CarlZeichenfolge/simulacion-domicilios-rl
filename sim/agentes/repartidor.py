@@ -32,6 +32,10 @@ class Repartidor(AgenteBase):
         self.costo_por_minuto = cfg["costo_por_minuto"]
         self.costo_espera_por_minuto = cfg["costo_espera_por_minuto"]
         self.penalizacion_cancelado = cfg["penalizacion_cancelado"]
+        # Como la "tasa de aceptación" de las apps reales: sin esto el agente
+        # aprende a escoger solo los pedidos cómodos y deja vencer el resto.
+        self.penalizacion_rechazo = cfg["penalizacion_rechazo"]
+        self.rechazos = 0
         self.duracion_espera = cfg["duracion_espera"]
         self.escala = cfg["escala_recompensa"]
         self.ganancias = 0.0
@@ -168,9 +172,12 @@ class Repartidor(AgenteBase):
             self._liberar()
             self._cerrar_decision(-(self.penalizacion_cancelado + costo), minutos)
         elif self._espera_hasta is not None and self.t >= self._espera_hasta:
+            # Solo se elige esperar si había pedidos, así que siempre es un rechazo.
             self._espera_hasta = None
-            self._cerrar_decision(-self.costo_espera_por_minuto * self.duracion_espera,
-                                  self.duracion_espera)
+            costo = self.costo_espera_por_minuto * self.duracion_espera + self.penalizacion_rechazo
+            self.costos += costo
+            self.rechazos += 1
+            self._cerrar_decision(-costo, self.duracion_espera)
 
     def _liberar(self) -> None:
         self.pedido = None

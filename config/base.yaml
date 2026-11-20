@@ -113,7 +113,7 @@ habitantes:
     energia_minima: 30
     gasto_energia: 10
   salir:
-    gusto: 6.0
+    gusto: 7.5                # media por habitante; calibrado para que sin lluvia ~7 salidas/día
     costo: 35000
     tiempo: 60
     penalizacion_lluvia: 3.0  # por eso con lluvia se pide más domicilio
@@ -131,6 +131,9 @@ repartidores:
   costo_por_minuto: 80        # gasolina + desgaste + tiempo, en pesos
   costo_espera_por_minuto: 20 # estar quieto también cuesta (tiempo de la persona)
   penalizacion_cancelado: 5000          # si se cancela un pedido que YO llevaba
+  penalizacion_rechazo: 4000            # esperar habiendo pedidos (tasa de aceptación).
+                                        # Con 0 el Q-learning escoge solo pedidos cómodos y la
+                                        # cancelación sube de ~15 % a ~28 % (ver experimento 1).
   duracion_espera: 3        # minutos que dura la acción "esperar"
   escala_recompensa: 0.001    # recompensa en miles de pesos para que Q no explote
   qlearning:

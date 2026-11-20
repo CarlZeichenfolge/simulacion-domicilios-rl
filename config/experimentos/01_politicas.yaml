@@ -1,5 +1,7 @@
 # Experimento 1. ¿Q-learning le gana a las heurísticas fijas?
 # Q-learning se entrena N episodios; luego TODAS se evalúan con las mismas semillas.
+# qlearning_sin_rechazo muestra el efecto del diseño de la recompensa: sin
+# castigo por rechazar, el agente aprende a escoger solo pedidos cómodos.
 nombre: 01_politicas
 episodios_entrenamiento: 300
 episodios_evaluacion: 30
@@ -11,3 +13,4 @@ variantes:
   cercano:   {repartidores: {politica: cercano}}
   urgente:   {repartidores: {politica: urgente}}
   qlearning: {repartidores: {politica: qlearning}}
+  qlearning_sin_rechazo: {repartidores: {politica: qlearning, penalizacion_rechazo: 0}}

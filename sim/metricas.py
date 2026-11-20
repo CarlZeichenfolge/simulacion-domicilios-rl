@@ -50,6 +50,7 @@ def resumen_episodio(modelo) -> dict:
         "espera_hasta_recogida": _promedio(p.recogido - p.creado for p in entregados),
         "ganancia_neta_por_repartidor": _promedio(r.ganancias - r.costos for r in reps),
         "recompensa_total": sum(r.recompensa_acumulada for r in reps),
+        "rechazos": sum(r.rechazos for r in reps),
         "satisfaccion_promedio": _promedio(modelo.satisfacciones),
         "fraccion_lluvia": modelo.minutos_lluvia / max(1, modelo.reloj.tick),
         "repartidores": len(reps),

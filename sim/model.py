@@ -92,7 +92,8 @@ class CiudadModel(mesa.Model):
             lugar_fuera = rng.choice(universidades if estudiante else oficinas)
             gusto = {nombre: min(10.0, max(0.0, rng.gauss(base, pref["gusto_desv"])))
                      for nombre, base in pref["gusto_base"].items()}
-            gusto["cocinar"] = min(10.0, max(0.0, rng.gauss(cfg["cocinar"]["gusto"], pref["gusto_desv"])))
+            for opcion in ("cocinar", "salir"):
+                gusto[opcion] = min(10.0, max(0.0, rng.gauss(cfg[opcion]["gusto"], pref["gusto_desv"])))
             peso_precio = rng.uniform(*pref["peso_precio"])
             peso_tiempo = rng.uniform(*pref["peso_tiempo"])
             # Creencia inicial: conoce gusto y menú, pero supone que todos
