@@ -66,7 +66,7 @@ class Repartidor(AgenteBase):
             pedidos = [{"pedido": p,
                         "distancia": ciudad.distancia_cuadras(self.nodo, p.restaurante.nodo),
                         "distancia_entrega": ciudad.distancia_cuadras(p.restaurante.nodo, p.destino),
-                        "pago": p.pago_repartidor,
+                        "pago": modelo.pago_actual(p),
                         "edad": p.edad(self.t),
                         "listo": p.estado == EstadoPedido.LISTO}
                        for p in modelo.pedidos_disponibles()]
@@ -95,6 +95,7 @@ class Repartidor(AgenteBase):
     # ---------------------------------------------------------------- acciones
     def _aceptar(self, accion: dict) -> None:
         pedido = accion["pedido"]
+        pedido.pago_repartidor = self.model.pago_actual(pedido)  # el incentivo queda fijo al aceptar
         pedido.asignar(self)
         self.pedido = pedido
         self._abrir_decision(accion)

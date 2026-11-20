@@ -130,6 +130,15 @@ class CiudadModel(mesa.Model):
         restaurante.recibir_pedido(pedido)
         return pedido
 
+    def pago_actual(self, pedido: Pedido) -> float:
+        """Pago ofrecido ahora: crece con cada minuto que el pedido espera sin dueño.
+
+        Por qué: es el incentivo de las apps reales para que alguien rescate los
+        pedidos viejos. Sin esto, al repartidor que aprende le conviene más un
+        pedido nuevo que uno a punto de cancelarse (paga igual y arriesga menos).
+        """
+        return pedido.pago_repartidor + self.cfg["pedidos"]["incentivo_por_minuto"] * pedido.edad(self.reloj.tick)
+
     def pedidos_disponibles(self) -> list[Pedido]:
         return [p for p in self.pedidos_activos if p.disponible]
 

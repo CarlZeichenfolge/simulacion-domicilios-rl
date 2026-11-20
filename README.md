@@ -29,6 +29,7 @@ python -m experimentos.graficas                              # PNG en resultados
 ```
 
 Controles de la vista 2D: `ESPACIO` pausa, `↑/↓` velocidad, `D` un minuto, `ESC` salir.
+Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zoom, `ESPACIO` pausa, `↑/↓` velocidad.
 
 ## Estructura
 
@@ -92,6 +93,16 @@ Controles de la vista 2D: `ESPACIO` pausa, `↑/↓` velocidad, `D` un minuto, `
    lluvia no tenía a quién quitarle salidas y el aumento de pedidos venía solo de re-pedir tras
    cancelaciones. Con gusto por salir propio de cada persona (media 7.5) la gente sale ~7 veces al
    día en seco y casi nunca con lluvia: el mecanismo ahora se ve en el experimento 3.
+6. **Q-learning no le gana a "urgente" (FIFO), y se intentó.** Le gana a aleatoria y a cercano, pero
+   "atender primero al más viejo" sigue cancelando menos. Se probó (3 semillas cada uno):
+   - incentivo de pago que sube con la espera (`pedidos.incentivo_por_minuto`, queda en 0): Q 12.4 % vs urgente 8.2 %;
+   - agregar al tipo de pedido "¿es el más viejo?", para que la tabla pueda representar exactamente
+     "urgente": Q 13.8-15.3 % vs 8.2 % (más tipos = aprende más lento). Se revirtió.
+
+   Explicación: la ventaja de FIFO es **del sistema** (menos cancelaciones para todos), pero la
+   recompensa del repartidor es **individual**. Un agente que optimiza su propia ganancia no tiene por
+   qué descubrir la regla que mejor sirve a la ciudad. Por eso en sistemas reales la asignación la
+   hace la plataforma (un despachador central) y no cada repartidor por su cuenta.
 
 ## Experimentos
 

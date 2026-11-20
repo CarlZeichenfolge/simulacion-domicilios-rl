@@ -58,6 +58,7 @@ pedidos:
   tarifa_domicilio: 5000      # lo que paga el habitante por el envío
   pago_base: 3000             # lo que gana el repartidor por entrega
   pago_por_cuadra: 300        # más lejos, más pago
+  incentivo_por_minuto: 0     # el pago sube mientras el pedido espera sin repartidor
   prob_propina: 0.3
   propina_min: 1000
   propina_max: 5000
