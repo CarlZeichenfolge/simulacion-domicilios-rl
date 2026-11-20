@@ -18,7 +18,8 @@ from pathlib import Path
 
 import matplotlib
 
-matplotlib.use("Agg")  # sin ventana: sirve en cualquier máquina
+if "ipykernel" not in sys.modules:
+    matplotlib.use("Agg")  # sin ventana en terminal; en un notebook (Colab) se deja el backend inline
 import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
 

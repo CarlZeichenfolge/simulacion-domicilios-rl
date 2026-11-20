@@ -5,6 +5,12 @@ domicilios, **restaurantes** los cocinan y **repartidores** deciden qué pedido 
 El repartidor aprende con **Q-learning** y el habitante aprende qué restaurante le
 conviene con un **bandit ε-greedy**.
 
+[![Abrir en Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CarlZeichenfolge/simulacion-domicilios-rl/blob/main/notebooks/informe_domicilios.ipynb)
+
+**Informe ejecutable:** [notebooks/informe_domicilios.ipynb](notebooks/informe_domicilios.ipynb) — el informe completo con
+mapa, animación del almuerzo, entrenamiento de Q-learning y los 4 experimentos en versión rápida (~2-3 min en Colab).
+El enlace de Colab solo funciona si el repositorio es público; si es privado, el notebook explica cómo subir el `.zip`.
+
 ## Instalación
 
 ```powershell
@@ -93,8 +99,10 @@ Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zo
    lluvia no tenía a quién quitarle salidas y el aumento de pedidos venía solo de re-pedir tras
    cancelaciones. Con gusto por salir propio de cada persona (media 7.5) la gente sale ~7 veces al
    día en seco y casi nunca con lluvia: el mecanismo ahora se ve en el experimento 3.
-6. **Q-learning no le gana a "urgente" (FIFO), y se intentó.** Le gana a aleatoria y a cercano, pero
-   "atender primero al más viejo" sigue cancelando menos. Se probó (3 semillas cada uno):
+6. **Q-learning no le gana a "urgente" (FIFO), y se intentó.** Optimiza bien su objetivo (su recompensa
+   supera a todas las heurísticas y entrega más rápido), pero en cancelaciones solo empata con aleatoria y
+   cercano (13.0 % vs 14.0 %, dentro del ruido entre semillas), y "atender primero al más viejo" cancela
+   bastante menos (9.1 %). Se probó (3 semillas cada uno):
    - incentivo de pago que sube con la espera (`pedidos.incentivo_por_minuto`, queda en 0): Q 12.4 % vs urgente 8.2 %;
    - agregar al tipo de pedido "¿es el más viejo?", para que la tabla pueda representar exactamente
      "urgente": Q 13.8-15.3 % vs 8.2 % (más tipos = aprende más lento). Se revirtió.
