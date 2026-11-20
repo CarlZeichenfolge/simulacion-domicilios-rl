@@ -1,0 +1,13 @@
+# Experimento 2. ¿Cuánto mejora la espera de los habitantes con más repartidores?
+# Se usa la heurística "cercano" para aislar el efecto de la cantidad.
+nombre: 02_cantidad_repartidores
+episodios_entrenamiento: 0
+episodios_evaluacion: 30
+semillas: [1, 2, 3, 4, 5]
+comun:
+  metricas: {recolectar_cada: 0}
+  repartidores: {politica: cercano}
+variantes:
+  1_repartidor:   {repartidores: {cantidad: 1}}
+  3_repartidores: {repartidores: {cantidad: 3}}
+  5_repartidores: {repartidores: {cantidad: 5}}

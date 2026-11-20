@@ -1,0 +1,13 @@
+# Experimento 1. ¿Q-learning le gana a las heurísticas fijas?
+# Q-learning se entrena N episodios; luego TODAS se evalúan con las mismas semillas.
+nombre: 01_politicas
+episodios_entrenamiento: 300
+episodios_evaluacion: 30
+semillas: [1, 2, 3, 4, 5]
+comun:
+  metricas: {recolectar_cada: 0}
+variantes:
+  aleatoria: {repartidores: {politica: aleatoria}}
+  cercano:   {repartidores: {politica: cercano}}
+  urgente:   {repartidores: {politica: urgente}}
+  qlearning: {repartidores: {politica: qlearning}}

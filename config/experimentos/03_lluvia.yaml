@@ -1,0 +1,13 @@
+# Experimento 3. Efecto de la lluvia sobre demanda, tiempos y cancelaciones.
+# "siempre" y "nunca" son los extremos; "estocastica" es el caso normal.
+nombre: 03_lluvia
+episodios_entrenamiento: 0
+episodios_evaluacion: 30
+semillas: [1, 2, 3, 4, 5]
+comun:
+  metricas: {recolectar_cada: 0}
+  repartidores: {politica: cercano}
+variantes:
+  sin_lluvia:  {eventos: {lluvia: {modo: nunca}}}
+  estocastica: {eventos: {lluvia: {modo: estocastica}}}
+  con_lluvia:  {eventos: {lluvia: {modo: siempre}}}

@@ -1,0 +1,158 @@
+# Parámetros por defecto de la ciudad de domicilios.
+# Regla: ningún número "mágico" vive en el código; todo lo ajustable está aquí.
+# Los experimentos (config/experimentos/*.yaml) solo sobrescriben lo que cambian.
+
+semilla: 42
+
+tiempo:
+  dias_por_episodio: 1        # 1 tick = 1 minuto, 1 día = 1440 ticks
+  hora_inicio: 0              # el episodio arranca a medianoche
+
+ciudad:
+  tamano: 10                  # manzanas por lado -> 11 x 11 intersecciones
+  longitud_calle_m: 400       # una cuadra "grande": cruzar la ciudad son ~8 km
+  velocidad_base_m_min: 300   # moto en ciudad, unos 18 km/h
+  semilla_mapa: 7             # mapa fijo entre episodios; null = depende de la semilla del episodio
+  edificios:
+    universidades: 1
+    oficinas: 8
+    casas: 40
+  restaurantes:
+    - nombre: Pizza           # rápida y barata
+      nodo: null              # null = posición aleatoria con la semilla del mapa
+      precio_medio: 25000
+      precio_desv: 3000
+      prep_media: 12
+      prep_desv: 3
+      capacidad: 4
+    - nombre: Hamburguesas    # intermedia
+      nodo: null
+      precio_medio: 32000
+      precio_desv: 4000
+      prep_media: 20
+      prep_desv: 5
+      capacidad: 3
+    - nombre: Sushi           # lenta y cara
+      nodo: null
+      precio_medio: 45000
+      precio_desv: 5000
+      prep_media: 30
+      prep_desv: 8
+      capacidad: 2
+
+eventos:
+  lluvia:
+    modo: estocastica         # estocastica | siempre | nunca
+    prob_empezar_por_hora: 0.15
+    prob_parar_por_hora: 0.35
+    factor_velocidad: 0.7     # con lluvia la moto va al 70 %
+  trancones:
+    activos: true
+    horas_pico: [[7, 9], [17, 19]]   # [inicio, fin) en horas
+    fraccion_aristas: 0.3
+    factor_min: 1.5
+    factor_max: 3.0
+
+pedidos:
+  espera_maxima: 60           # minutos desde que se crea hasta que se cancela
+  tarifa_domicilio: 5000      # lo que paga el habitante por el envío
+  pago_base: 3000             # lo que gana el repartidor por entrega
+  pago_por_cuadra: 300        # más lejos, más pago
+  prob_propina: 0.3
+  propina_min: 1000
+  propina_max: 5000
+
+habitantes:
+  cantidad: 30                # calibrado: con 3 repartidores se cancela ~15 %
+  proporcion_estudiantes: 0.4
+  desfase_horario_max: 45     # minutos; cada persona arranca su horario un poco distinto
+  hambre_inicial: [10, 50]
+  umbral_hambre: 70
+  saciedad_comida: 75         # cuánto baja el hambre al comer
+  energia_inicial: 80
+  dinero_inicial: 200000
+  ingreso_diario: 100000
+  tasa_hambre:                # puntos de hambre por minuto según la actividad
+    dormir: 0.04
+    trabajar: 0.22
+    estudiar: 0.22
+    ejercicio: 0.40
+    libre: 0.18
+  tasa_energia:               # puntos de energía por minuto (negativo = cansa)
+    dormir: 0.20
+    trabajar: -0.08
+    estudiar: -0.08
+    ejercicio: -0.25
+    libre: -0.03
+  horarios:                   # [hora_inicio, hora_fin, actividad]
+    trabajador:
+      - [0, 6, dormir]
+      - [6, 7, ejercicio]
+      - [7, 8, libre]
+      - [8, 17, trabajar]
+      - [17, 23, libre]
+      - [23, 24, dormir]
+    estudiante:
+      - [0, 7, dormir]
+      - [7, 12, estudiar]
+      - [12, 14, libre]
+      - [14, 18, estudiar]
+      - [18, 24, libre]
+  preferencias:               # cada habitante muestrea sus propios pesos (heterogeneidad)
+    peso_precio: [0.05, 0.15] # utilidad perdida por cada 1000 pesos
+    peso_tiempo: [0.03, 0.08] # utilidad perdida por cada minuto de espera
+    gusto_desv: 1.5
+    gusto_base:
+      Pizza: 6.0
+      Hamburguesas: 7.0
+      Sushi: 8.0
+  cocinar:
+    gusto: 5.0                # media; cada habitante muestrea el suyo con gusto_desv
+    costo: 8000
+    tiempo: 45
+    energia_minima: 30
+    gasto_energia: 10
+  salir:
+    gusto: 6.0
+    costo: 35000
+    tiempo: 60
+    penalizacion_lluvia: 3.0  # por eso con lluvia se pide más domicilio
+  aprendizaje:                # bandit epsilon-greedy
+    politica: egreedy
+    epsilon: 0.1
+    alpha: 0.2                # paso constante: los restaurantes cambian (lluvia, trancón)
+    tiempo_esperado_inicial: 25   # lo que cree que tarda un domicilio antes de probar
+    recompensa_cancelado: -5.0
+
+repartidores:
+  cantidad: 3
+  politica: qlearning         # aleatoria | cercano | urgente | qlearning
+  nodo_inicial: null          # null = aleatorio
+  costo_por_minuto: 80        # gasolina + desgaste + tiempo, en pesos
+  costo_espera_por_minuto: 20 # estar quieto también cuesta (tiempo de la persona)
+  penalizacion_cancelado: 5000          # si se cancela un pedido que YO llevaba
+  duracion_espera: 3        # minutos que dura la acción "esperar"
+  escala_recompensa: 0.001    # recompensa en miles de pesos para que Q no explote
+  qlearning:
+    alpha: 0.1
+    gamma: 0.97               # por minuto; una acción de k minutos descuenta gamma^k
+                              # (0.99 hacía que esperar valiera casi lo mismo que trabajar)
+    epsilon_inicial: 1.0
+    epsilon_min: 0.05
+    decaimiento_epsilon: 0.99 # por episodio
+    # Contexto (estado)
+    cortes_hora: [6, 11, 14, 18, 21]    # madrugada, mañana, almuerzo, tarde, cena, noche
+    cortes_carga: [1, 3, 6]             # pedidos disponibles: 0, 1-2, 3-5, 6+
+    # Tipo de pedido (acción)
+    cortes_distancia: [3, 6, 10]        # cuadras de mí al restaurante
+    cortes_entrega: [4, 8]              # cuadras del restaurante al cliente
+    cortes_edad: [15, 30, 45]           # minutos que lleva esperando el pedido
+
+metricas:
+  recolectar_cada: 10         # ticks entre muestras del DataCollector (0 = no recolectar)
+
+vista_2d:
+  ancho: 1100
+  alto: 760
+  ticks_por_cuadro: 2
+  fps: 30

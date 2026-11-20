@@ -1,0 +1,15 @@
+# Experimento 4. ¿Cómo evolucionan las preferencias de los habitantes?
+# Episodios largos (varios días) para que el bandit tenga tiempo de aprender.
+# Control: los mismos habitantes con alpha = 0 (nunca actualizan su creencia).
+nombre: 04_preferencias
+episodios_entrenamiento: 0
+episodios_evaluacion: 1
+semillas: [1, 2, 3, 4, 5]
+guardar_comidas: true
+comun:
+  metricas: {recolectar_cada: 0}
+  tiempo: {dias_por_episodio: 14}
+  repartidores: {politica: cercano}
+variantes:
+  aprende:    {habitantes: {aprendizaje: {alpha: 0.2}}}
+  no_aprende: {habitantes: {aprendizaje: {alpha: 0.0}}}

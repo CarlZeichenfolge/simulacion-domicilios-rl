@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+.vscode/
+.idea/
+*.egg-info/
+
+# Resultados generados: se regeneran con experimentos/correr.py
+resultados/*
+!resultados/.gitkeep
