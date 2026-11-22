@@ -7,7 +7,7 @@ import pytest
 from sim.model import CiudadModel
 from vistas.ciclo_dia import estado_cielo
 from vistas.geometria import Malla
-from vistas.maqueta_3d import Maqueta, malla_moto, malla_trancones
+from vistas.maqueta_3d import ANCHO_CALLE, LARGO_CARRIL, SENTIDOS, Maqueta, malla_moto, malla_trancones
 
 
 def _normales_hacia_afuera(malla: Malla, centro) -> bool:
@@ -113,4 +113,38 @@ def test_mallas_completas(config):
     for malla in malla_moto(q.col):
         assert len(malla) > 0
     aristas = list(modelo.ciudad.grafo.edges)[:5]
-    assert len(malla_trancones(q, aristas, random.Random(0))) > 0
+    franja, carros, luces = malla_trancones(q, aristas, random.Random(0), cfg["trafico"])
+    assert len(franja) > 0 and len(carros) > 0 and len(luces) > 0
+    assert carros.usa_uv and len(carros.uvs) == len(carros) * 2
+
+
+def _mover_como_el_shader(x, z, d0, codigo, avance):
+    """La misma cuenta de `mover()` en vistas/sombreado.py, para probarla sin tarjeta de video."""
+    dx, dz = SENTIDOS[int(codigo)]
+    desp = (d0 + avance) % LARGO_CARRIL - d0
+    return x + dx * desp, z + dz * desp
+
+
+@pytest.mark.parametrize("avance", [0.0, 0.7, 1.9, 5.3])
+def test_los_carros_del_trancon_no_se_salen_de_su_calle(config, avance):
+    """Corridos por el shader, los carros siguen sobre la calle trancada y por su carril derecho."""
+    modelo = CiudadModel(config, semilla=3)
+    cfg = config["vista_3d"]
+    q = Maqueta(modelo.ciudad, cfg, random.Random(0))
+    aristas = list(modelo.ciudad.grafo.edges)[:12]
+    _, carros, _ = malla_trancones(q, aristas, random.Random(0), cfg["trafico"])
+    v, uv = carros.vertices, carros.uvs
+    calles = [(q.mundo(*a), q.mundo(*b)) for a, b in aristas]
+    for i in range(0, len(carros)):
+        d0, codigo = uv[2 * i], uv[2 * i + 1]
+        x, z = _mover_como_el_shader(v[3 * i], v[3 * i + 2], d0, codigo, avance)
+        dx, dz = SENTIDOS[int(codigo)]
+        en_alguna = False
+        for (ax, _, az), (bx, _, bz) in calles:
+            if dx and az == bz and min(ax, bx) - 0.4 <= x <= max(ax, bx) + 0.4:
+                lado = (z - az) * -dx  # derecha del rumbo: +x va por z menor, -x por z mayor
+                en_alguna |= 0 <= lado <= ANCHO_CALLE / 2 + 0.05
+            if dz and ax == bx and min(az, bz) - 0.4 <= z <= max(az, bz) + 0.4:
+                lado = (x - ax) * dz   # +z va por x mayor
+                en_alguna |= 0 <= lado <= ANCHO_CALLE / 2 + 0.05
+        assert en_alguna, (x, z, codigo)

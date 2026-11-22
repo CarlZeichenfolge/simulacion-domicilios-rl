@@ -21,13 +21,14 @@ from __future__ import annotations
 import math
 import random
 
+from sim.agentes import EstadoRepartidor
 from sim.model import CiudadModel
 from sim.pedidos import EstadoPedido
 from sim.reloj import MINUTOS_POR_HORA
 from vistas.ciclo_dia import estado_cielo
 from vistas.geometria import Malla, hex_a_color, mezclar
-from vistas.maqueta_3d import (ANCHO_CALLE, ESCALA, PROFUNDIDAD_DIORAMA, Maqueta, malla_icono, malla_lluvia,
-                               malla_moto, malla_nube, malla_pin, malla_trancones)
+from vistas.maqueta_3d import (ANCHO_CALLE, ESCALA, LARGO_CARRIL, PROFUNDIDAD_DIORAMA, Maqueta, malla_icono,
+                               malla_lluvia, malla_moto, malla_nube, malla_pin, malla_trancones)
 from vistas.marcador import texto_marcador
 from vistas.velocidad import Velocidad
 
@@ -263,10 +264,23 @@ class Ambiente:
             self.nubes.append(nube)
         self.limites = limites
         self.estado = None
+        # Relojes propios desde que abrió la ventana. Por qué no time.time(): son ~1.7e9 s y
+        # en un float de la tarjeta de video (7 cifras) el titilar y los carros se congelan.
+        self.reloj_real = 0.0
+        self.reloj_trafico = 0.0   # este se detiene en pausa: los carros también se quedan quietos
+        ct = cfg["trafico"]
+        scene.set_shader_input("velocidad_trafico", ct["velocidad"])
+        scene.set_shader_input("periodo_trafico", ct["periodo"])
+        scene.set_shader_input("largo_carril", LARGO_CARRIL)
+        scene.set_shader_input("tiempo_trafico", 0.0)
 
-    def actualizar(self, minuto_del_dia: float, lloviendo: bool) -> dict:
+    def actualizar(self, minuto_del_dia: float, lloviendo: bool, pausa: bool = False) -> dict:
         from ursina import Vec3, camera, scene, time, window
         dt = min(time.dt, 0.1)
+        self.reloj_real += dt
+        if not pausa:
+            self.reloj_trafico += dt
+            scene.set_shader_input("tiempo_trafico", self.reloj_trafico)
         self.encuadre.revisar()
         if self.camara.girando:
             self.camara.rotation_y += self.cfg["camara"]["giro_auto"] * dt
@@ -300,7 +314,7 @@ class Ambiente:
         scene.set_shader_input("sol_visible", e["sol_visible"])
         scene.set_shader_input("luna_dir", Vec3(*e["luna_dir"]))
         scene.set_shader_input("noche", e["noche"])
-        scene.set_shader_input("tiempo", time.time())
+        scene.set_shader_input("tiempo", self.reloj_real)
         window.color = color_ursina(e["horizonte"])
         self.cielo.position = camera.world_position
 
@@ -446,8 +460,8 @@ class Vista3D:
     def leyenda(self) -> str:
         h, r, p = self.cfg["hud"], self.cfg["colores"]["repartidor"], self.cfg["colores"]["pedido"]
         s = etiqueta(h["suave"])
-        return (f"{s}Caja de la moto:  {etiqueta(r['libre'])}libre   {etiqueta(r['yendo_a_restaurante'])}va al "
-                f"restaurante   {etiqueta(r['yendo_a_cliente'])}va al cliente\n"
+        return (f"{s}Aro y luz de la moto:  {etiqueta(r['libre'])}libre   {etiqueta(r['yendo_a_restaurante'])}va al "
+                f"restaurante   {etiqueta(r['yendo_a_cliente'])}va al cliente {s}(con la comida flotando encima)\n"
                 f"{s}Pedidos:  {etiqueta(p['creado'])}creado   {etiqueta(p['en_preparacion'])}en cocina   "
                 f"{etiqueta(p['listo'])}listo   {etiqueta(p['en_camino'])}en camino   "
                 f"{etiqueta(p['urgente'])}a punto de cancelarse   {s}Rojo en la calle: trancón\n"
@@ -464,7 +478,7 @@ class Vista3D:
     def actualizar_cuadro(self) -> None:
         from ursina import time
         self.avanzar(0 if self.pausa else self.velocidad.pasos(time.dt))
-        estado = self.ambiente.actualizar(self.minuto_suave(), self.modelo.eventos.lloviendo)
+        estado = self.ambiente.actualizar(self.minuto_suave(), self.modelo.eventos.lloviendo, self.pausa)
         self.dibujar(self.velocidad.fraccion, estado, self.ambiente.lluvia)
         self._textos()
 
@@ -485,6 +499,10 @@ class Vista3D:
     def dibujar(self, fraccion: float, estado: dict, lluvia: float) -> None:
         self._luces(estado["noche"])
         self._trafico()
+        if self.trancones:  # farolas y stops: tenues de día, encendidos de noche
+            tenue = self.cfg["trafico"]["luces_dia"]
+            brillo = tenue + (1 - tenue) * estado["noche"]
+            self.trancones[2].color = color_ursina((brillo, brillo, brillo, 1))
         self._repartidores(fraccion, estado["noche"])
         self._avisar_rechazos()
         self._pedidos()
@@ -559,31 +577,38 @@ class Vista3D:
         if estado == self.ultimo_trafico:
             return  # solo se rehace cuando cambia el tráfico
         self.ultimo_trafico = estado
-        if self.trancones is not None:
-            destroy(self.trancones)
-            self.trancones = None
+        for entidad in self.trancones or ():
+            destroy(entidad)
+        self.trancones = None
         grafo = self.modelo.ciudad.grafo
         trancadas = [(u, v) for u, v in grafo.edges if grafo.edges[u, v]["factor_trancon"] > 1]
         if trancadas:  # fuera de hora pico no hay calles trancadas
-            malla = malla_trancones(self.maqueta, trancadas, random.Random(self.cfg["semilla_decorado"]))
-            self.trancones = Entity(model=a_malla_ursina(malla), shader=self._sombreado.iluminado)
+            franja, carros, luces = malla_trancones(self.maqueta, trancadas,
+                                                    random.Random(self.cfg["semilla_decorado"]), self.cfg["trafico"])
+            s = self._sombreado
+            e_luces = Entity(model=a_malla_ursina(luces), shader=s.luces_trafico)
+            e_luces.hide(MASCARA_SOMBRA)
+            self.trancones = (Entity(model=a_malla_ursina(franja), shader=s.iluminado),
+                              Entity(model=a_malla_ursina(carros), shader=s.trafico), e_luces)
 
     def _nueva_moto(self) -> dict:
         from ursina import Entity
-        cuerpo, caja, faro = self.mallas_moto
+        cuerpo, baliza, faro = self.mallas_moto
         raiz = Entity(scale=self.cfg["escala_moto"])
         Entity(parent=raiz, model=a_malla_ursina(cuerpo), shader=self._sombreado.iluminado)
-        e_caja = Entity(parent=raiz, model=a_malla_ursina(caja), shader=self._sombreado.iluminado)
+        e_baliza = Entity(parent=raiz, model=a_malla_ursina(baliza), shader=self._sombreado.emisivo)
         e_faro = Entity(parent=raiz, model=a_malla_ursina(faro), shader=self._sombreado.emisivo)
         aro = Malla()
         aro.anillo_suelo((0, 0.02, 0), 0.34, 0.42, 20, (1, 1, 1, 1))
         e_aro = Entity(parent=raiz, model=a_malla_ursina(aro), shader=self._sombreado.emisivo)
         e_aro.hide(MASCARA_SOMBRA)
         e_faro.hide(MASCARA_SOMBRA)
-        return {"raiz": raiz, "caja": e_caja, "faro": e_faro, "aro": e_aro, "rumbo": None, "lateral": (0.0, 0.0)}
+        return {"raiz": raiz, "baliza": e_baliza, "faro": e_faro, "aro": e_aro, "rumbo": None,
+                "lateral": (0.0, 0.0)}
 
     def _repartidores(self, fraccion: float, noche: float) -> None:
-        """Cada moto va por su carril derecho, gira suave hacia donde va y la caja dice su estado."""
+        """Cada moto va por su carril derecho y gira suave hacia donde va; la baliza sobre la
+        mochila y el aro en el piso dicen su estado."""
         from ursina import time
         dt = min(time.dt, 0.1)
         colores = self.col["repartidor"]
@@ -610,9 +635,46 @@ class Vista3D:
             raiz.position = (px + lx * carril, 0.0, pz + lz * carril)
             raiz.rotation_y = moto["rumbo"] or 0.0
             tinte = colores[r.estado.value]
-            moto["caja"].color = color_ursina(tinte)
+            moto["baliza"].color = color_ursina(tinte)
             moto["aro"].color = color_ursina(tinte)
             moto["faro"].color = color_ursina(mezclar(self.col["foco_dia"], self.col["faro_moto"], noche))
+            self._comida_en_moto(r, moto, dt)
+
+    def _comida_en_moto(self, r, moto: dict, dt: float) -> None:
+        """Si la moto lleva un pedido, encima flota la comida de ese restaurante.
+
+        Por qué: el color de la baliza obliga a mirar la leyenda; una pizza flotando
+        sobre la moto se entiende sola ("esta moto lleva una pizza a alguien").
+        """
+        from ursina import time
+        lleva = r.estado == EstadoRepartidor.YENDO_A_CLIENTE and r.pedido is not None
+        nombre = r.pedido.restaurante.nombre if lleva else None
+        comidas = moto.setdefault("comida", {})
+        for otro, entidad in comidas.items():
+            if (otro == nombre) != entidad.enabled:
+                entidad.enabled = otro == nombre
+        if nombre is None:
+            return
+        cc = self.cfg["comida_en_moto"]
+        entidad = comidas.get(nombre)
+        if entidad is None:
+            entidad = comidas[nombre] = self._nueva_comida(nombre)
+        rebote = cc["rebote"] * math.sin(time.time() * cc["frecuencia_rebote"] + r.unique_id)
+        x, _, z = moto["raiz"].position
+        entidad.position = (x, cc["altura"] + rebote, z)
+        entidad.rotation_y += cc["giro"] * dt
+
+    def _nueva_comida(self, nombre: str):
+        """Ícono de la comida sobre un platico brillante del color del restaurante."""
+        from ursina import Entity
+        cc = self.cfg["comida_en_moto"]
+        raiz = Entity(scale=cc["escala"])
+        Entity(parent=raiz, model=a_malla_ursina(malla_icono(nombre, self.col)), shader=self._sombreado.iluminado)
+        plato = Malla()
+        plato.cilindro((0, -0.04, 0), 0.4, 0.04, 20, self.col["restaurantes"][nombre])
+        e_plato = Entity(parent=raiz, model=a_malla_ursina(plato), shader=self._sombreado.emisivo)
+        e_plato.hide(MASCARA_SOMBRA)
+        return raiz
 
     def _pedidos(self) -> None:
         from ursina import Entity, destroy, time
@@ -790,7 +852,7 @@ class VistaDuelo3D:
         m_izq, m_der = self.izq.modelo, self.der.modelo
         for vista in (self.izq, self.der):
             vista.avanzar(minutos)
-        estado = self.ambiente.actualizar(self.der.minuto_suave(), m_der.eventos.lloviendo)
+        estado = self.ambiente.actualizar(self.der.minuto_suave(), m_der.eventos.lloviendo, self.pausa)
         for vista in (self.izq, self.der):
             vista.dibujar(self.velocidad.fraccion, estado, self.ambiente.lluvia)
         h = self.cfg3d["hud"]

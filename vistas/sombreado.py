@@ -9,6 +9,8 @@ permite cambiar el color de la luz con la hora. Aquí:
   suelo) + niebla del color del horizonte, para que la maqueta se funda con el cielo.
 - emisivo: sin iluminación (ventanas encendidas, faroles, lluvia, letreros), con
   textura opcional y la misma niebla.
+- trafico / luces_trafico: iguales a iluminado / emisivo, pero corren cada vértice por
+  su carril (los carros del trancón se mueven sin que Python toque nada).
 - cielo: degradado cenit-horizonte, disco del sol, luna y estrellas, en una esfera
   que sigue a la cámara.
 
@@ -45,8 +47,32 @@ vec3 con_niebla(vec3 color, vec3 pos_mundo) {
 }
 """
 
-iluminado = Shader(language=Shader.GLSL, name="iluminado", vertex="""#version 150
-""" + _LUZ + """
+_MOVER = """
+uniform float tiempo_trafico;
+uniform float velocidad_trafico;
+uniform float periodo_trafico;
+uniform float largo_carril;
+
+// Carros del trancón. uv.x = dónde arranca el carro en su carril; parte entera de uv.y =
+// sentido (orden de maqueta_3d.SENTIDOS); parte decimal = fase, para que cada carril frene
+// a su ritmo. El avance es "acordeón": la velocidad sube y baja hasta casi cero.
+vec4 mover(vec4 v, vec2 codigo) {
+    float sentido = floor(codigo.y);
+    float t = tiempo_trafico + fract(codigo.y) * periodo_trafico;
+    float w = 6.2831853 / periodo_trafico;
+    float avance = velocidad_trafico * (t - sin(w * t) / w);
+    float desp = mod(codigo.x + avance, largo_carril) - codigo.x;
+    vec3 dir = sentido < 0.5 ? vec3(1.0, 0.0, 0.0) : sentido < 1.5 ? vec3(-1.0, 0.0, 0.0)
+             : sentido < 2.5 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 0.0, -1.0);
+    return vec4(v.xyz + dir * desp, v.w);
+}
+"""
+
+
+def _vertice_iluminado(movil: bool) -> str:
+    posicion = "mover(vertex, p3d_MultiTexCoord0)" if movil else "vertex"
+    return """#version 150
+""" + _LUZ + (_MOVER if movil else "") + """
 uniform mat4 p3d_ModelViewProjectionMatrix;
 uniform mat4 p3d_ModelViewMatrix;
 uniform mat4 p3d_ModelMatrix;
@@ -54,6 +80,7 @@ uniform mat3 p3d_NormalMatrix;
 in vec4 vertex;
 in vec3 normal;
 in vec4 p3d_Color;
+in vec2 p3d_MultiTexCoord0;
 out vec4 color_vertice;
 out vec3 normal_vista;
 out vec3 normal_mundo;
@@ -61,15 +88,44 @@ out vec3 pos_mundo;
 out vec4 coord_sombra;
 
 void main() {
-    gl_Position = p3d_ModelViewProjectionMatrix * vertex;
-    vec4 pos_vista = p3d_ModelViewMatrix * vertex;
+    vec4 v = """ + posicion + """;
+    gl_Position = p3d_ModelViewProjectionMatrix * v;
+    vec4 pos_vista = p3d_ModelViewMatrix * v;
     normal_vista = normalize(p3d_NormalMatrix * normal);
     normal_mundo = normalize(mat3(p3d_ModelMatrix) * normal);
-    pos_mundo = (p3d_ModelMatrix * vertex).xyz;
+    pos_mundo = (p3d_ModelMatrix * v).xyz;
     coord_sombra = p3d_LightSource[0].shadowViewMatrix * pos_vista;
     color_vertice = p3d_Color;
 }
-""", fragment="""#version 150
+"""
+
+
+def _vertice_emisivo(movil: bool) -> str:
+    posicion = "mover(vertex, p3d_MultiTexCoord0)" if movil else "vertex"
+    # En los carros el uv es el código de movimiento, no una textura: se manda (0, 0).
+    textura = "vec2(0.0)" if movil else "p3d_MultiTexCoord0"
+    return """#version 150
+""" + (_MOVER if movil else "") + """
+uniform mat4 p3d_ModelViewProjectionMatrix;
+uniform mat4 p3d_ModelMatrix;
+in vec4 vertex;
+in vec4 p3d_Color;
+in vec2 p3d_MultiTexCoord0;
+out vec4 color_vertice;
+out vec2 uv;
+out vec3 pos_mundo;
+
+void main() {
+    vec4 v = """ + posicion + """;
+    gl_Position = p3d_ModelViewProjectionMatrix * v;
+    pos_mundo = (p3d_ModelMatrix * v).xyz;
+    color_vertice = p3d_Color;
+    uv = """ + textura + """;
+}
+"""
+
+
+_FRAGMENTO_ILUMINADO = """#version 150
 """ + _LUZ + _NIEBLA + """
 uniform vec4 p3d_ColorScale;
 uniform vec3 luz_cielo;
@@ -107,25 +163,14 @@ void main() {
     vec3 luz = ambiente + p3d_LightSource[0].color * difusa * luz_directa;
     color_final = vec4(con_niebla(base.rgb * luz, pos_mundo), base.a);
 }
-""")
+"""
 
-emisivo = Shader(language=Shader.GLSL, name="emisivo", vertex="""#version 150
-uniform mat4 p3d_ModelViewProjectionMatrix;
-uniform mat4 p3d_ModelMatrix;
-in vec4 vertex;
-in vec4 p3d_Color;
-in vec2 p3d_MultiTexCoord0;
-out vec4 color_vertice;
-out vec2 uv;
-out vec3 pos_mundo;
+iluminado = Shader(language=Shader.GLSL, name="iluminado", vertex=_vertice_iluminado(False),
+                   fragment=_FRAGMENTO_ILUMINADO)
+trafico = Shader(language=Shader.GLSL, name="trafico", vertex=_vertice_iluminado(True),
+                 fragment=_FRAGMENTO_ILUMINADO)
 
-void main() {
-    gl_Position = p3d_ModelViewProjectionMatrix * vertex;
-    pos_mundo = (p3d_ModelMatrix * vertex).xyz;
-    color_vertice = p3d_Color;
-    uv = p3d_MultiTexCoord0;
-}
-""", fragment="""#version 150
+_FRAGMENTO_EMISIVO = """#version 150
 """ + _NIEBLA + """
 uniform sampler2D p3d_Texture0;
 uniform vec4 p3d_ColorScale;
@@ -138,7 +183,11 @@ void main() {
     vec4 c = texture(p3d_Texture0, uv) * color_vertice * p3d_ColorScale;
     color_final = vec4(con_niebla(c.rgb, pos_mundo), c.a);
 }
-""")
+"""
+
+emisivo = Shader(language=Shader.GLSL, name="emisivo", vertex=_vertice_emisivo(False), fragment=_FRAGMENTO_EMISIVO)
+luces_trafico = Shader(language=Shader.GLSL, name="luces_trafico", vertex=_vertice_emisivo(True),
+                       fragment=_FRAGMENTO_EMISIVO)
 
 cielo = Shader(language=Shader.GLSL, name="cielo", vertex="""#version 150
 uniform mat4 p3d_ModelViewProjectionMatrix;

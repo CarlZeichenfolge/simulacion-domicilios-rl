@@ -80,6 +80,16 @@ class Malla:
         self.colores: list[float] = []
         self.uvs: list[float] = []
         self.usa_uv = False
+        self._uv_fijo = (0.0, 0.0)
+
+    def fijar_uv(self, u: float, v: float) -> None:
+        """Las piezas que se agreguen después llevan este (u, v) en TODOS sus vértices.
+
+        Por qué: los carros del trancón se mueven en la tarjeta de video, no en Python.
+        Cada carro guarda en su uv dónde arranca y por qué carril va, y el shader lo corre.
+        """
+        self._uv_fijo = (u, v)
+        self.usa_uv = True
 
     def __len__(self) -> int:
         """Número de vértices."""
@@ -93,8 +103,9 @@ class Malla:
         self.usa_uv = self.usa_uv or otra.usa_uv
 
     # ------------------------------------------------------------- primitivas
-    def _triangulo(self, a: Vector, b: Vector, c: Vector, color: Color,
-                   uv: tuple = ((0, 0), (0, 0), (0, 0))) -> None:
+    def _triangulo(self, a: Vector, b: Vector, c: Vector, color: Color, uv: tuple | None = None) -> None:
+        if uv is None:
+            uv = (self._uv_fijo,) * 3
         normal = _normalizar(_cruz(_restar(b, a), _restar(c, a)))
         for punto, coord in ((a, uv[0]), (c, uv[2]), (b, uv[1])):  # al revés: ver docstring del módulo
             self.vertices += punto

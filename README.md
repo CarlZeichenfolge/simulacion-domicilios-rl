@@ -55,8 +55,10 @@ Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zo
 
 La vista 3D es una maqueta low poly que vive el día completo: el cielo, el sol y las sombras siguen el reloj
 simulado (amanecer, atardecer, noche con estrellas), de noche se prenden ventanas y faroles, la lluvia nubla
-el cielo poco a poco y las calles trancadas se llenan de carros. La caja de cada moto tiene el color de su
-estado y cada pedido es un alfiler sobre la casa del cliente. Colores, horas y cantidades: `vista_3d` en
+el cielo poco a poco y en hora pico las calles trancadas se llenan de carros que avanzan a pedazos (se mueven
+en la tarjeta de video, ver `vistas/sombreado.py`). Los repartidores llevan mochila de domicilios naranja; su
+estado lo dicen la luz sobre la mochila y el aro en el piso, y mientras llevan un pedido flota encima la comida
+de ese restaurante (pizza, hamburguesa o sushi). Cada pedido es un alfiler sobre la casa del cliente. Colores, horas y cantidades: `vista_3d` en
 `config/base.yaml`; si tu pantalla la ve oscura, sube `vista_3d.exposicion`.
 
 ## Estructura

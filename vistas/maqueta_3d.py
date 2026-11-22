@@ -434,47 +434,80 @@ class Maqueta:
 
 
 # ---------------------------------------------------------------- piezas móviles
-def malla_trancones(maqueta: Maqueta, aristas: list[tuple], rng: random.Random) -> Malla:
-    """Calles trancadas: carros en fila en los dos carriles sobre una franja roja.
+LARGO_CARRIL = ESCALA - ANCHO_CALLE   # de cruce a cruce: lo que recorre un carro antes de volver a entrar
+LARGO_CARRO = 0.46
+# Sentido de cada carril, en el mismo orden que lo decodifica el shader (vistas/sombreado.py)
+SENTIDOS = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 
-    Se rehace solo cuando cambia el tráfico (unas veces al día), así que puede ser
-    una malla nueva cada vez.
+
+def malla_trancones(maqueta: Maqueta, aristas: list[tuple], rng: random.Random,
+                    cfg: dict) -> tuple[Malla, Malla, Malla]:
+    """Calles trancadas: (franja roja, carros, luces de los carros).
+
+    Los carros avanzan "a pedazos" (arrancan y frenan) por los dos carriles. Por qué
+    en la tarjeta de video: con cientos de carros, moverlos uno por uno desde Python
+    trabaría la demo. Cada carro guarda en su uv (arranque, sentido + fase) y el
+    shader `trafico` lo corre; al llegar al cruce vuelve a entrar por el otro lado.
+
+    Se rehace solo cuando cambia el tráfico (unas veces al día).
     """
-    m = Malla()
+    franja, carros, luces = Malla(), Malla(), Malla()
     c = maqueta.col
+    escala = cfg["escala_carro"]
     for u, v in aristas:
         (ax, _, az), (bx, _, bz) = maqueta.mundo(*u), maqueta.mundo(*v)
         largo = math.hypot(bx - ax, bz - az)
         ux, uz = (bx - ax) / largo, (bz - az) / largo
-        giro = math.degrees(math.atan2(ux, uz))
         mitad = ANCHO_CALLE / 2 - 0.04
         x0, x1 = sorted((ax + ux * ANCHO_CALLE / 2, bx - ux * ANCHO_CALLE / 2))
         z0, z1 = sorted((az + uz * ANCHO_CALLE / 2, bz - uz * ANCHO_CALLE / 2))
-        m.rect_suelo(x0 - mitad * abs(uz), z0 - mitad * abs(ux), x1 + mitad * abs(uz), z1 + mitad * abs(ux),
-                     ALTO_RAYA + 0.002, c["trancon"])
-        for carril in (-1, 1):
-            lateral = carril * ANCHO_CALLE / 4
-            d = ANCHO_CALLE / 2 + rng.uniform(0.15, 0.3)
-            while d < largo - ANCHO_CALLE / 2 - 0.3:
-                px, pz = ax + ux * d + uz * lateral, az + uz * d - ux * lateral
-                _carro(m, px, pz, giro + (180 if carril < 0 else 0), rng.choice(c["carros"]), c)
-                d += rng.uniform(0.38, 0.5)
-    return m
+        franja.rect_suelo(x0 - mitad * abs(uz), z0 - mitad * abs(ux), x1 + mitad * abs(uz), z1 + mitad * abs(ux),
+                          ALTO_RAYA + 0.002, c["trancon"])
+        for carril in (1, -1):  # +1: de u a v por la derecha; -1: de v a u (también por su derecha)
+            sx, sz = ux * carril, uz * carril
+            sentido = SENTIDOS.index((round(sx), round(sz)))
+            # inicio del carril (en su sentido) y corrimiento a la derecha del rumbo
+            inicio = (ax, az) if carril > 0 else (bx, bz)
+            ix, iz = inicio[0] + sx * ANCHO_CALLE / 2, inicio[1] + sz * ANCHO_CALLE / 2
+            derecha = (sz, -sx)
+            lateral = ANCHO_CALLE / 4
+            cuantos = max(1, int(LARGO_CARRIL / (LARGO_CARRO * escala + cfg["espacio_carros"])))
+            fase = rng.uniform(0, cfg["fase_maxima"])  # cada carril frena a su ritmo
+            giro = math.degrees(math.atan2(sx, sz))
+            arranque = rng.uniform(0, LARGO_CARRIL)
+            for i in range(cuantos):
+                d0 = (arranque + i * LARGO_CARRIL / cuantos) % LARGO_CARRIL
+                px = ix + sx * d0 + derecha[0] * lateral
+                pz = iz + sz * d0 + derecha[1] * lateral
+                carros.fijar_uv(d0, sentido + fase)
+                luces.fijar_uv(d0, sentido + fase)
+                _carro(carros, luces, px, pz, giro, rng.choice(c["carros"]), c, escala)
+    return franja, carros, luces
 
 
-def _carro(m: Malla, x: float, z: float, giro: float, color: Color, c: dict) -> None:
-    m.caja((x, 0.07, z), (0.16, 0.08, 0.3), color, giro=giro)
-    dx, _, dz = girar_y((0, 0, -0.02), giro)
-    m.caja((x + dx, 0.14, z + dz), (0.14, 0.07, 0.16), c["vidrio_carro"], giro=giro, color_arriba=color)
+def _carro(m: Malla, luces: Malla, x: float, z: float, giro: float, color: Color, c: dict, s: float) -> None:
+    """Carro low poly con frente en +z: carrocería, cabina, llantas, farolas y stops."""
+    def pieza(malla, local, tamano, col, **extra):
+        dx, dy, dz = girar_y(tuple(p * s for p in local), giro)
+        malla.caja((x + dx, dy, z + dz), tuple(t * s for t in tamano), col, giro=giro, **extra)
+
+    pieza(m, (0, 0.085, 0), (0.26, 0.1, LARGO_CARRO), color)
+    pieza(m, (0, 0.175, -0.03), (0.22, 0.09, 0.24), c["vidrio_carro"], color_arriba=color)
+    for lx in (-1, 1):
+        for lz in (-1, 1):
+            pieza(m, (lx * 0.13, 0.045, lz * 0.15), (0.035, 0.09, 0.09), c["llanta"])
+        pieza(luces, (lx * 0.08, 0.1, LARGO_CARRO / 2 + 0.005), (0.06, 0.03, 0.01), c["farola_carro"])
+        pieza(luces, (lx * 0.09, 0.1, -LARGO_CARRO / 2 - 0.005), (0.05, 0.03, 0.01), c["stop_carro"])
 
 
 def malla_moto(c: dict) -> tuple[Malla, Malla, Malla]:
-    """(moto y repartidor, caja de domicilios, farola). Frente = +z.
+    """(moto, repartidor y mochila; baliza de estado; farola). Frente = +z.
 
-    La caja va aparte porque su color dice el estado del repartidor, y la farola
-    aparte porque brilla de noche.
+    La mochila de domicilios va naranja siempre, a la espalda, como en la calle. El
+    estado del repartidor lo dicen la baliza sobre la mochila y el aro en el piso
+    (la vista los tiñe); la farola va aparte porque brilla de noche.
     """
-    cuerpo, caja, faro = Malla(), Malla(), Malla()
+    cuerpo, baliza, faro = Malla(), Malla(), Malla()
     llanta, rin = c["llanta"], c["rin"]
     for z in (-0.28, 0.3):
         cuerpo.cilindro((0, 0.13, z), 0.13, 0.08, 10, llanta, eje="x", color_tapa=rin)
@@ -490,10 +523,15 @@ def malla_moto(c: dict) -> tuple[Malla, Malla, Malla]:
         cuerpo.caja((lado * 0.15, 0.62, 0.12), (0.06, 0.06, 0.28), oscuro)  # brazos al manubrio
     cuerpo.esfera((0, 0.89, -0.04), (0.12, 0.12, 0.13), c["casco"])
     cuerpo.caja((0, 0.89, 0.07), (0.16, 0.06, 0.03), c["visera"])
-    caja.caja((0, 0.74, -0.3), (0.36, 0.32, 0.32), BLANCO)
-    caja.caja((0, 0.91, -0.3), (0.38, 0.03, 0.34), aclarar(BLANCO, -0.15))
+    mochila = c["mochila"]
+    cuerpo.caja((0, 0.76, -0.3), (0.38, 0.38, 0.3), mochila, color_arriba=aclarar(mochila, 0.12))
+    cuerpo.caja((0, 0.76, -0.452), (0.3, 0.3, 0.01), aclarar(mochila, -0.12))   # tapa de atrás
+    cuerpo.caja((0, 0.96, -0.3), (0.4, 0.03, 0.32), aclarar(mochila, -0.2))     # borde de la tapa
+    for lado in (-1, 1):
+        cuerpo.caja((lado * 0.1, 0.72, -0.05), (0.04, 0.3, 0.2), c["correa"])  # correas sobre los hombros
+    baliza.caja((0, 1.0, -0.3), (0.1, 0.05, 0.1), BLANCO, sin_base=False)
     faro.caja((0, 0.4, 0.31), (0.08, 0.06, 0.02), BLANCO)
-    return cuerpo, caja, faro
+    return cuerpo, baliza, faro
 
 
 def malla_pin() -> Malla:
