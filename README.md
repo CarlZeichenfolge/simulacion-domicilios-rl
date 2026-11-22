@@ -40,6 +40,7 @@ python -m experimentos.correr (Get-ChildItem config/experimentos/*.yaml)   # tod
 python -m experimentos.prueba_final                          # prueba final del exp. 1 con días nunca vistos
 python -m experimentos.prueba_final config/experimentos/05_dqn.yaml   # prueba final tabla vs red
 python -m experimentos.gym_dqn                               # la red entrenada SOLO con env.reset()/env.step()
+python -m experimentos.que_aprendio                          # cómo decide cada política (qué aprendió la red)
 python -m experimentos.prediccion                            # predictor supervisado (regresión + clasificación)
 python -m experimentos.graficas                              # PNG en resultados/
 ```
@@ -49,7 +50,7 @@ una entrega de ~30 min se ve en ~15 s. `↑/↓` recorren 0.5, 1, 2, 4, 8, 15, 3
 por segundo real y no por cuadro, así que se ve igual en cualquier computador (`vistas/velocidad.py`).
 
 Controles de la vista 2D: `ESPACIO` pausa, `↑/↓` velocidad, `D` un minuto, `ESC` salir.
-Duelos: `ESPACIO` pausa, `↑/↓` velocidad, `ESC` salir (en 3D, además, clic derecho gira y la rueda hace zoom).
+Duelos: `ESPACIO` pausa, `↑/↓` velocidad, `M` marcador, `ESC` salir (en 3D, además, clic derecho gira y la rueda hace zoom).
 Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zoom, `ESPACIO` pausa, `↑/↓` velocidad.
 
 ## Estructura
@@ -236,6 +237,31 @@ dibujan en vivo las cancelaciones y la recompensa acumuladas. La red sin entrena
 habiendo pedidos (cada rechazo cuesta $4.060). Con la semilla 42, al final del día la sin entrenar lleva
 16 cancelados y la entrenada 3. Es para **ver** el aprendizaje; la medición justa con muchos días está
 en el experimento 5.
+
+Para que la diferencia se vea en las ciudades y no solo en los números:
+- **Letreros flotantes** en 3D: "rechazó ×N" sobre la moto que deja pasar pedidos y "cancelado" en la casa
+  cuyo pedido se venció.
+- **Marcador final**: al terminar el día aparece solo una tabla antes/después (cancelados, entregados,
+  rechazos, tiempo, satisfacción y recompensa) que marca cuál fue mejor en cada métrica. Con `M` se ve en
+  cualquier momento.
+
+## Qué aprendió la red (`python -m experimentos.que_aprendio`)
+
+Registra cada decisión (sin tocar el azar de la simulación) en 30 días de prueba:
+
+| | Red sin entrenar | Red entrenada | Tabla Q entrenada | Urgente |
+|---|---|---|---|---|
+| Espera habiendo pedidos | 75 % | 4 % | 1 % | 0 % |
+| Escoge el más viejo* | 49 % | 30 % | 19 % | 100 % |
+| Escoge el más cercano* | 19 % | 46 % | 47 % | 52 % |
+| Edad del pedido que acepta | 21.9 min | 8.3 min | 8.0 min | 14.0 min |
+| Cancelación | 22.6 % | 10.8 % | 15.1 % | 8.7 % |
+
+\* solo decisiones con 2 o más pedidos disponibles. Lectura: la red aprendió a **no esperar** y a tomar
+pedidos frescos y cercanos; rescata el más viejo más seguido que la tabla, y por eso cancela menos que ella.
+Urgente siempre rescata el más viejo y sigue siendo la que menos cancela (el hallazgo central).
+Usa los modelos versionados de `modelos/` y una sola semilla: es una ilustración; la comparación con 5
+semillas es el experimento 5.
 
 ## Predictor supervisado (`experimentos/prediccion.py`)
 

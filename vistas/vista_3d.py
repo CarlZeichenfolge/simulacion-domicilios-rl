@@ -20,6 +20,7 @@ import random
 from sim.agentes import EstadoRepartidor
 from sim.model import CiudadModel
 from sim.pedidos import EstadoPedido
+from vistas.marcador import texto_marcador
 from vistas.velocidad import Velocidad
 
 ESCALA = 3.0  # unidades de mundo por cuadra
@@ -56,6 +57,33 @@ def preparar_escena(centro, distancia: float, giro: float = 20):
     camera.z = camara.target_z
     camera.fov = 50
     return camara
+
+
+class Encuadre:
+    """Pone la cámara a la distancia justa para que quepa un ancho dado.
+
+    Por qué no basta con fijar la distancia una vez: Ursina aplica el fov a veces en
+    horizontal y a veces en vertical según cuándo termina de crearse la ventana, y con
+    la misma distancia las dos ciudades salían recortadas. Aquí se lee el ángulo REAL de
+    la lente y se recalcula cuando la ventana cambia de forma (no en cada cuadro, para
+    que el zoom con la rueda del mouse se respete).
+    """
+
+    def __init__(self, camara, ancho_visible: float):
+        self.camara = camara
+        self.ancho_visible = ancho_visible
+        self.ultima_forma = None
+
+    def revisar(self) -> None:
+        from ursina import camera, window
+        horizontal = camera.perspective_lens.getFov()[0]
+        forma = (tuple(window.size), round(horizontal, 2))
+        if forma == self.ultima_forma:
+            return
+        self.ultima_forma = forma
+        distancia = (self.ancho_visible / 2) / math.tan(math.radians(horizontal / 2))
+        self.camara.target_z = -distancia
+        camera.z = -distancia
 
 
 def crear_controlador(al_actualizar, al_tecla):
@@ -107,6 +135,45 @@ class Vista3D:
         self.marcas_pedido: dict[int, object] = {}
         self.ultimo_trafico = None
         self._anterior: dict[int, tuple] = {}  # posición de cada moto un minuto antes (para suavizar)
+        self.pedido_de_marca: dict[int, object] = {}  # pid -> Pedido, para saber si se canceló al desaparecer
+        self.rechazos_vistos: dict[int, int] = {r.unique_id: r.rechazos for r in modelo.repartidores}
+        self.cfg_avisos = modelo.cfg["vistas"]["avisos"]
+        self.avisos: dict = {}  # clave -> [letrero, momento en que nació, veces]
+
+    # ------------------------------------------------------------ avisos
+    def avisar(self, clave, texto: str, posicion, hex_color: str) -> None:
+        """Letrero que sube y se desvanece: hace VISIBLES los errores (rechazos y cancelaciones)
+        que de otra forma solo se verían como un número en el marcador.
+
+        Una clave por moto: si la misma moto vuelve a rechazar mientras su letrero sigue
+        vivo, no se apila otro encima; el mismo letrero se renueva y cuenta ("×3").
+        """
+        from ursina import Text, color, scene, time
+        if clave in self.avisos:
+            aviso = self.avisos[clave]
+            aviso[2] += 1
+            aviso[0].text = f"{texto} ×{aviso[2]}"
+            aviso[0].position = posicion
+            aviso[1] = time.time()
+            return
+        if len(self.avisos) >= self.cfg_avisos["max_activos"]:
+            return
+        letrero = Text(text=texto, parent=scene, position=posicion, billboard=True, scale=40,
+                       origin=(0, 0), color=color.hex(hex_color))
+        self.avisos[clave] = [letrero, time.time(), 1]
+
+    def _mover_avisos(self) -> None:
+        from ursina import destroy, time
+        ahora = time.time()
+        duracion = self.cfg_avisos["duracion"]
+        for clave, (letrero, nacio, _) in list(self.avisos.items()):
+            edad = ahora - nacio
+            if edad >= duracion:
+                destroy(letrero)
+                del self.avisos[clave]
+                continue
+            letrero.y += self.cfg_avisos["subida"] * min(time.dt, self.velocidad.dt_maximo)
+            letrero.alpha = 1 - edad / duracion
 
     # ------------------------------------------------------------ coordenadas
     def mundo(self, x: float, y: float, altura: float = 0.0):
@@ -133,7 +200,9 @@ class Vista3D:
 
     def construir(self) -> None:
         """Crea todo sin llamar a app.run(): así se puede probar o capturar sin ventana."""
-        preparar_escena(self.centro(), self.lado * 1.6)
+        cfg = self.modelo.cfg["vista_3d"]
+        camara = preparar_escena(self.centro(), self.lado * cfg["encuadre"])
+        self.encuadre = Encuadre(camara, self.lado * cfg["encuadre"])
         self.construir_ciudad()
         self.construir_hud()
         self.controlador = crear_controlador(self.actualizar_cuadro, self.tecla)
@@ -214,6 +283,7 @@ class Vista3D:
     # ----------------------------------------------------------------- cuadro
     def actualizar_cuadro(self) -> None:
         from ursina import time
+        self.encuadre.revisar()
         self.avanzar(0 if self.pausa else self.velocidad.pasos(time.dt))
         self.dibujar(self.velocidad.fraccion)
         self._textos()
@@ -231,8 +301,19 @@ class Vista3D:
     def dibujar(self, fraccion: float) -> None:
         self._trafico()
         self._repartidores(fraccion)
+        self._avisar_rechazos()
         self._pedidos()
         self._lluvia()
+        self._mover_avisos()
+
+    def _avisar_rechazos(self) -> None:
+        """El contador `rechazos` sube cuando termina una espera habiendo pedidos (ver Repartidor)."""
+        for r in self.modelo.repartidores:
+            nuevos = r.rechazos - self.rechazos_vistos.get(r.unique_id, r.rechazos)
+            self.rechazos_vistos[r.unique_id] = r.rechazos
+            if nuevos > 0:
+                self.avisar(("rechazo", r.unique_id), "rechazó", self.mundo(*r.posicion_continua(), altura=2.2),
+                            "#ffb347")
 
     def _trafico(self) -> None:
         from ursina import Entity, Vec3, color, destroy
@@ -276,12 +357,16 @@ class Vista3D:
         for pid in list(self.marcas_pedido):
             if pid not in activos:
                 destroy(self.marcas_pedido.pop(pid))
+                pedido = self.pedido_de_marca.pop(pid)
+                if pedido.estado == EstadoPedido.CANCELADO:
+                    self.avisar(("cancelado", pid), "cancelado", self.mundo(*pedido.destino, altura=2.4), "#ff3b3b")
         espera_maxima = self.modelo.cfg["pedidos"]["espera_maxima"]
         for pid, pedido in activos.items():
             marca = self.marcas_pedido.get(pid)
             if marca is None:
                 marca = Entity(model="sphere", scale=0.45)
                 self.marcas_pedido[pid] = marca
+                self.pedido_de_marca[pid] = pedido
             vieja = pedido.edad(self.modelo.reloj.tick) / espera_maxima > 0.66
             marca.color = color.hex("#ff3b3b") if vieja else color.hex(HEX_PEDIDO[pedido.estado])
             marca.position = self.mundo(*pedido.destino, altura=1.6 + 0.2 * math.sin(time.time() * 3 + pid))
@@ -304,7 +389,7 @@ class Vista3D:
         trafico = "Hora pico" if m.eventos.trancon_activo else "Tráfico normal"
         return (f"{clima}  |  {trafico}\n"
                 f"Entregados {m.conteo['entregados']}   Cancelados {m.conteo['cancelados']} "
-                f"({m.conteo['cancelados'] / creados:.0%})\n"
+                f"({m.conteo['cancelados'] / creados:.0%})   Rechazos {sum(r.rechazos for r in m.repartidores)}\n"
                 f"Tiempo promedio de entrega: {promedio}\n"
                 f"Recompensa de los repartidores: {sum(r.recompensa_acumulada for r in m.repartidores):.1f}")
 
@@ -349,7 +434,8 @@ class VistaDuelo3D:
         centro = (self.izq.centro() + self.der.centro()) / 2
         ancho_total = self.der.desplazamiento + self.der.lado
         # De frente (giro 0) para que las dos ciudades se vean del mismo tamaño
-        preparar_escena(centro, ancho_total * self.der.modelo.cfg["vista_duelo_3d"]["distancia_camara"], giro=0)
+        ancho_visible = ancho_total * self.der.modelo.cfg["vista_duelo_3d"]["encuadre"]
+        self.encuadre = Encuadre(preparar_escena(centro, ancho_visible, giro=0), ancho_visible)
         self.izq.construir_ciudad()
         self.der.construir_ciudad()
         self.hud_izq = Text(text="", position=window.top_left + Vec3(0.02, -0.02, 0), origin=(-0.5, 0.5),
@@ -358,11 +444,24 @@ class VistaDuelo3D:
                             scale=1.0, background=True, color=color.hex(HEX_DESPUES))
         self.hud_centro = Text(text="", position=window.top + Vec3(0, -0.02, 0), origin=(0, 0.5),
                                scale=1.3, background=True)
-        Text(text=AYUDA, position=window.bottom_left + Vec3(0.02, 0.03, 0), origin=(-0.5, -0.5), scale=0.8,
-             color=color.hex("#9aa0aa"))
+        Text(text=AYUDA + "   M: marcador", position=window.bottom_left + Vec3(0.02, 0.03, 0),
+             origin=(-0.5, -0.5), scale=0.8, color=color.hex("#9aa0aa"))
+        # Marcador final: fuente monoespaciada para que las columnas queden alineadas, sobre
+        # un panel oscuro casi opaco para que la ciudad de atrás no estorbe al leer.
+        from ursina import Entity, camera
+        from ursina.shaders import unlit_shader
+        # unlit: si no, el panel hereda la luz de la escena y se ve gris y transparente
+        self.fondo_marcador = Entity(parent=camera.ui, model="quad", color=color.rgba(0.08, 0.09, 0.11, 0.96),
+                                     shader=unlit_shader, z=0.1, enabled=False)
+        self.panel_marcador = Text(text="", font="VeraMono.ttf", position=Vec3(0, 0, 0), origin=(0, 0),
+                                   scale=1.25, enabled=False)
+        self.marcador_mostrado = False
         self.controlador = crear_controlador(self.actualizar_cuadro, self.tecla)
 
     def tecla(self, tecla: str) -> None:
+        if tecla == "m":
+            self.panel_marcador.enabled = not self.panel_marcador.enabled
+            return
         tecla_comun(tecla, self.velocidad, self.alternar_pausa)
 
     def alternar_pausa(self) -> None:
@@ -370,6 +469,7 @@ class VistaDuelo3D:
 
     def actualizar_cuadro(self) -> None:
         from ursina import time
+        self.encuadre.revisar()
         minutos = 0 if self.pausa else self.velocidad.pasos(time.dt)
         for vista in (self.izq, self.der):
             vista.avanzar(minutos)
@@ -381,3 +481,15 @@ class VistaDuelo3D:
                       - sum(r.recompensa_acumulada for r in m_izq.repartidores))
         poner_texto(self.hud_centro, f"{m_der.reloj.texto()}   {self.velocidad.texto()}{'   PAUSA' if self.pausa else ''}\n"
                                      f"Recompensa: después − antes = {diferencia:+.1f}")
+        # Al terminar el día el marcador aparece solo, una vez (con M se oculta o se vuelve a ver).
+        if not (m_izq.running or m_der.running) and not self.marcador_mostrado:
+            self.marcador_mostrado = True
+            self.panel_marcador.enabled = True
+        self.fondo_marcador.enabled = self.panel_marcador.enabled
+        if self.panel_marcador.enabled:
+            poner_texto(self.panel_marcador, texto_marcador(m_izq, m_der, *self.titulos))
+            from ursina import window
+            cfg = self.der.modelo.cfg["vista_duelo_3d"]
+            # Ancho fijo en proporción a la pantalla: Ursina mide mal el ancho de la fuente monoespaciada.
+            self.fondo_marcador.scale = (window.aspect_ratio * cfg["ancho_marcador"],
+                                         self.panel_marcador.height + cfg["margen_marcador"])

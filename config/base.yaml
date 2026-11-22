@@ -180,6 +180,13 @@ gym:                          # entorno Gymnasium (sim/entorno_gym.py)
   dias_prueba: 30
   semilla: 1
 
+que_aprendio:                 # experimentos/que_aprendio.py: cómo decide cada política
+  dias: 30                    # días del bloque de PRUEBA (nunca vistos al entrenar)
+  semilla: 1
+  modelos:                    # entrenados 300 días (copias versionadas en modelos/)
+    dqn: modelos/red_dqn_300dias.pt
+    qlearning: modelos/tabla_q_300dias.npz
+
 metricas:
   recolectar_cada: 10         # ticks entre muestras del DataCollector (0 = no recolectar)
 
@@ -211,6 +218,10 @@ vistas:                       # comunes a 2D, 3D y duelos (vistas/velocidad.py)
   velocidad_inicial: 2        # una entrega (~30 min) se ve en ~15 s: se alcanza a seguir con los ojos
   hora_inicio: 11             # las demos arrancan antes del almuerzo; de madrugada todos duermen
   dt_maximo: 0.1              # s; recorta cuadros trabados para que la ciudad no salte
+  avisos:                     # letreros flotantes "rechazó" / "cancelado" en la vista 3D
+    duracion: 2.0             # segundos reales que dura cada letrero
+    subida: 1.5               # unidades por segundo que sube mientras se desvanece
+    max_activos: 30           # a velocidades altas se omiten los que sobren (no se traba)
 
 vista_2d:
   ancho: 1100
@@ -226,4 +237,9 @@ vista_duelo:                  # python main.py --vista duelo (antes vs después,
 
 vista_duelo_3d:               # python main.py --vista duelo3d
   separacion: 4               # cuadras de pasto entre las dos ciudades
-  distancia_camara: 0.78      # × ancho de las dos ciudades; menos = más cerca (la rueda del mouse también acerca)
+  encuadre: 1.12              # ancho visible = ancho de las dos ciudades × esto (más = más lejos; la rueda también)
+  margen_marcador: 0.08       # borde vertical del panel del marcador final (unidades de pantalla de Ursina)
+  ancho_marcador: 0.86        # fracción del ancho de la ventana que ocupa el panel del marcador
+
+vista_3d:
+  encuadre: 2.3               # ancho visible = ancho de la ciudad × esto (la cámara va girada: necesita más margen)

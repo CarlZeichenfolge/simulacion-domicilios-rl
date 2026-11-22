@@ -23,6 +23,7 @@ import math
 import pygame
 
 from sim.model import CiudadModel
+from vistas.marcador import texto_marcador
 from vistas.velocidad import Velocidad
 from vistas.vista_2d import FONDO, PANEL, TEXTO, TEXTO_SUAVE, Vista2D
 
@@ -79,6 +80,8 @@ class VistaDuelo:
         self.fps = cfg["fps"]
         self.muestrear_cada = cfg["muestrear_cada"]
         self.pausa = False
+        self.ver_marcador = False
+        self.marcador_mostrado = False
         # Series para las curvas: (minuto, cancelados, recompensa) de cada ciudad, desde donde arrancó la demo.
         self.series = {clave: [(m.reloj.tick, m.conteo["cancelados"], _recompensa(m))]
                        for clave, m in (("antes", antes), ("despues", despues))}
@@ -104,11 +107,34 @@ class VistaDuelo:
                         self.velocidad.subir()
                     elif evento.key == pygame.K_DOWN:
                         self.velocidad.bajar()
+                    elif evento.key == pygame.K_m:
+                        self.ver_marcador = not self.ver_marcador
             dt = reloj.tick(self.fps) / 1000
             if not self.pausa:
                 self._avanzar(self.velocidad.pasos(dt))
+            # Al terminar el día el marcador aparece solo, una vez (con M se oculta o se vuelve a ver).
+            if not (self.antes.running or self.despues.running) and not self.marcador_mostrado:
+                self.marcador_mostrado = self.ver_marcador = True
             self._dibujar(pantalla)
+            if self.ver_marcador:
+                self._marcador(pantalla)
             pygame.display.flip()
+
+    def _marcador(self, pantalla) -> None:
+        lineas = texto_marcador(self.antes, self.despues, *self.titulos).split("\n")
+        fuente = self.fuente_grande
+        alto_linea = fuente.get_linesize()
+        ancho = max(fuente.size(linea)[0] for linea in lineas) + 60
+        alto = alto_linea * len(lineas) + 40
+        x0, y0 = (self.ancho - ancho) // 2, (self.alto - alto) // 2
+        fondo = pygame.Surface((ancho, alto), pygame.SRCALPHA)
+        fondo.fill((20, 22, 27, 235))
+        pantalla.blit(fondo, (x0, y0))
+        pygame.draw.rect(pantalla, COLOR_DESPUES, (x0, y0, ancho, alto), 2, border_radius=6)
+        for i, linea in enumerate(lineas):
+            color = (COLOR_DESPUES if linea.endswith("(mejor)")
+                     else COLOR_ANTES if linea.endswith("(mejor antes)") else TEXTO)
+            pantalla.blit(fuente.render(linea, True, color), (x0 + 30, y0 + 20 + i * alto_linea))
 
     def _avanzar(self, minutos: int) -> None:
         """Avanza las dos ciudades los mismos minutos (mismo reloj) y anota las curvas."""
@@ -139,7 +165,7 @@ class VistaDuelo:
         self._grafica(pantalla, (mitad + 20, y_graf, ancho_graf, alto_graf),
                       "Recompensa de los repartidores (acumulada, miles de $)", 2)
         pie = f"{self.despues.reloj.texto()}   {self.velocidad.texto()}  {'PAUSA' if self.pausa else ''}" \
-              "   ESPACIO pausa  ↑↓ velocidad  ESC salir"
+              "   ESPACIO pausa  ↑↓ velocidad  M marcador  ESC salir"
         pantalla.blit(self.fuente_chica.render(pie, True, TEXTO_SUAVE), (40, self.alto - 18))
 
     def _encabezado(self, pantalla, m: CiudadModel, titulo: str, color, x0: int) -> None:
