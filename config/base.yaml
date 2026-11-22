@@ -155,6 +155,28 @@ repartidores:
 metricas:
   recolectar_cada: 10         # ticks entre muestras del DataCollector (0 = no recolectar)
 
+# Predictor supervisado (experimentos/prediccion.py): con lo que se sabe cuando nace
+# un pedido, ¿cuánto tardará (regresión) y se cancelará (clasificación)?
+prediccion:
+  politica: urgente           # la política "desplegada" que genera los datos (fija, no aprende)
+  semilla_base: 9             # bloque de semillas propio: no se cruza con los experimentos 1-4
+  dias:                       # partición POR DÍA, no por pedido (ver docstring del módulo)
+    entrenamiento: 60
+    validacion: 20
+    prueba: 20
+  numericas: [hora, lluvia, trancon, cuadras_entrega, pedidos_en_cocina,
+              pedidos_sin_repartidor, repartidores_libres, cuadras_repartidor_libre]
+  categoricas: [restaurante]
+  semilla_modelos: 0          # random_state de Random Forest
+  arboles: 200
+  # Hiperparámetros que se eligen en VALIDACIÓN (la prueba se usa una sola vez).
+  candidatos:
+    ridge_alpha: [0.01, 0.1, 1, 10, 100]
+    logistica_c: [0.01, 0.1, 1, 10, 100]
+    knn_k: [1, 3, 5, 9, 15, 25, 41, 61]
+    bosque_profundidad: [3, 5, 8, 12, 20]
+  peso_clases: balanced       # solo ~10 % se cancela: sin esto el clasificador dice siempre "no"
+
 vista_2d:
   ancho: 1100
   alto: 760

@@ -7,6 +7,7 @@ import mesa
 
 from sim.agentes import Habitante, Repartidor, Restaurante
 from sim.agentes.habitante import expandir_horario
+from sim.agentes.repartidor import EstadoRepartidor
 from sim.ciudad import Ciudad
 from sim.eventos import GestorEventos
 from sim.metricas import crear_datacollector
@@ -124,11 +125,37 @@ class CiudadModel(mesa.Model):
                         destino=destino, precio=restaurante.cotizar(),
                         pago_repartidor=cfg["pago_base"] + cfg["pago_por_cuadra"] * cuadras + propina,
                         creado=self.reloj.tick)
+        pedido.datos["foto"] = self._foto_pedido(restaurante, cuadras)
         self.pedidos.append(pedido)
         self.pedidos_activos.append(pedido)
         self.conteo["creados"] += 1
         restaurante.recibir_pedido(pedido)
         return pedido
+
+    def _foto_pedido(self, restaurante: Restaurante, cuadras_entrega: int) -> dict:
+        """Lo que la plataforma sabe en el instante en que nace el pedido.
+
+        Por qué solo el instante de creación: es lo único disponible cuando
+        hay que estimarle al cliente cuánto tardará. Guardar algo posterior
+        (quién lo aceptó, si llovió después) sería fuga de datos para el
+        predictor supervisado de experimentos/prediccion.py.
+        No usa self.random: tomar la foto no altera la simulación.
+        """
+        libres = [r for r in self.repartidores if r.estado == EstadoRepartidor.LIBRE]
+        return {
+            "hora": self.reloj.minuto_del_dia / 60,
+            "lluvia": int(self.eventos.lloviendo),
+            "trancon": int(self.eventos.trancon_activo),
+            "restaurante": restaurante.nombre,
+            "cuadras_entrega": cuadras_entrega,
+            "pedidos_en_cocina": len(restaurante.cola) + len(restaurante.cocina),
+            "pedidos_sin_repartidor": len(self.pedidos_disponibles()),
+            "repartidores_libres": len(libres),
+            # Sin repartidores libres el dato no existe: queda faltante (NaN) a
+            # propósito, y el predictor lo imputa y marca (faltante informativo).
+            "cuadras_repartidor_libre": min((self.ciudad.distancia_cuadras(r.nodo, restaurante.nodo)
+                                             for r in libres), default=float("nan")),
+        }
 
     def pago_actual(self, pedido: Pedido) -> float:
         """Pago ofrecido ahora: crece con cada minuto que el pedido espera sin dueño.

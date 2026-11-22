@@ -32,25 +32,36 @@ from sim.model import CiudadModel  # noqa: E402
 from sim.politicas import crear_politica_repartidor  # noqa: E402
 
 CARPETA_RESULTADOS = RAIZ / "resultados"
-DESPLAZAMIENTO_EVALUACION = 50_000  # semillas de evaluación separadas de las de entrenamiento
+# Tres bloques de semillas que nunca se cruzan (cada bloque admite hasta 30.000 días):
+#   entrenamiento -> la política aprende.
+#   evaluacion    -> los resultados que miramos MIENTRAS diseñábamos (cumple el papel
+#                    del conjunto de validación: con ellos se decidieron recompensas,
+#                    estados y calibración).
+#   prueba        -> se corre UNA sola vez al final, con las tablas ya congeladas.
+#                    Por qué: si se elige el diseño mirando un conjunto, ese conjunto
+#                    deja de medir la generalización real (Géron, cap. 2).
+DESPLAZAMIENTO_FASE = {"entrenamiento": 0, "evaluacion": 50_000, "prueba": 80_000}
 
 
 def semilla_episodio(semilla: int, fase: str, episodio: int) -> int:
-    base = semilla * 100_000
-    return base + episodio + (DESPLAZAMIENTO_EVALUACION if fase == "evaluacion" else 0)
+    return semilla * 100_000 + DESPLAZAMIENTO_FASE[fase] + episodio
 
 
 def correr_corrida(config: dict, semilla: int, episodios_entrenamiento: int,
                    episodios_evaluacion: int, politica=None, guardar_comidas: bool = False,
-                   al_terminar_episodio=None):
-    """Entrena y evalúa una política. Devuelve (filas, comidas, política)."""
+                   al_terminar_episodio=None, fase_evaluacion: str = "evaluacion"):
+    """Entrena y evalúa una política. Devuelve (filas, comidas, política).
+
+    `fase_evaluacion="prueba"` usa el bloque de semillas reservado para la
+    prueba final, que no se usó para tomar ninguna decisión de diseño.
+    """
     politica = politica or crear_politica_repartidor(config["repartidores"])
     if not politica.aprende:
         episodios_entrenamiento = 0  # no tiene nada que aprender: ahorra tiempo
     filas, comidas = [], []
     for fase, cantidad in (("entrenamiento", episodios_entrenamiento),
-                           ("evaluacion", episodios_evaluacion)):
-        if fase == "evaluacion" and hasattr(politica, "explorar"):
+                           (fase_evaluacion, episodios_evaluacion)):
+        if fase == fase_evaluacion and hasattr(politica, "explorar"):
             politica.explorar = False
         for episodio in range(cantidad):
             modelo = CiudadModel(config, semilla=semilla_episodio(semilla, fase, episodio),

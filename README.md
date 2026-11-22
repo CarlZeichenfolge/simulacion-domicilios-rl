@@ -31,6 +31,8 @@ python main.py --vista 2d                                    # demo con Pygame (
 python main.py --vista 2d --politica cercano                 # demo con otra política
 python -m experimentos.correr config/experimentos/01_politicas.yaml   # un experimento
 python -m experimentos.correr (Get-ChildItem config/experimentos/*.yaml)   # todos
+python -m experimentos.prueba_final                          # prueba final del exp. 1 con días nunca vistos
+python -m experimentos.prediccion                            # predictor supervisado (regresión + clasificación)
 python -m experimentos.graficas                              # PNG en resultados/
 ```
 
@@ -47,7 +49,7 @@ Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zo
 | `sim/agentes/` | `Habitante`, `Restaurante`, `Repartidor` (ciclo percibir → decidir → actuar). |
 | `sim/politicas/` | Políticas intercambiables: aleatoria, cercano, urgente, Q-learning, ε-greedy. |
 | `vistas/` | Vista 2D (Pygame) y 3D (Ursina). Solo leen el modelo. |
-| `experimentos/` | Correr experimentos en paralelo y generar gráficas. |
+| `experimentos/` | Correr experimentos en paralelo, prueba final, predictor supervisado y gráficas. |
 | `tests/` | pytest: reglas del entorno, ciclo del pedido, políticas y reproducibilidad. |
 
 ## El entorno
@@ -123,6 +125,61 @@ Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zo
 
 Cada experimento se corre con 5 semillas. Los episodios de evaluación usan **las mismas semillas para
 todas las variantes** (comparación pareada) y Q-learning se evalúa sin explorar ni aprender.
+
+### Validación y prueba
+
+Hay tres bloques de semillas que nunca se cruzan (`DESPLAZAMIENTO_FASE` en `experimentos/correr.py`):
+
+| Bloque | Para qué |
+|---|---|
+| Entrenamiento | Q-learning aprende (300 días por semilla) |
+| Evaluación = **validación** | Con estos 30 días por semilla se tomaron las decisiones de diseño (recompensa, estado, calibración) |
+| **Prueba** | Se corrió **una sola vez** al final, con las tablas Q congeladas (`python -m experimentos.prueba_final`) |
+
+Prueba final (5 semillas × 30 días nunca vistos):
+
+| Política | Cancelación | Tiempo de entrega (min) | Recompensa por día |
+|---|---|---|---|
+| Urgente | **8.8 % ± 0.5** | 36.2 | 209.5 |
+| Q-learning | 11.1 % ± 1.8 | 33.9 | **235.8** |
+| Aleatoria | 11.1 % ± 1.8 | 34.5 | 217.0 |
+| Más cercano | 12.6 % ± 1.6 | 35.1 | 197.2 |
+| Q-learning sin castigo por rechazo | 21.3 % ± 3.0 | 33.5 | 231.1 |
+
+Las conclusiones de la validación se sostienen con días nuevos.
+
+## Predictor supervisado (`experimentos/prediccion.py`)
+
+Cada pedido guarda una *foto* de lo que se sabía al crearlo (`CiudadModel._foto_pedido`). Con eso se
+responden dos preguntas sobre el mismo dataset: **¿cuánto tardará?** (regresión) y **¿se cancelará?**
+(clasificación). Partición por día (60 / 20 / 20), Pipeline ajustado solo con entrenamiento, hiperparámetros
+elegidos en validación y una sola medición en prueba.
+
+| Regresión (prueba) | MAE (min) | R² |
+|---|---|---|
+| Línea base (media) | 8.83 | −0.01 |
+| Regresión lineal | 5.58 | 0.57 |
+| KNN (K = 15) | 5.44 | 0.57 |
+| **Random Forest** | **5.24** | **0.61** |
+
+| Clasificación (prueba) | Exactitud | Recall | F1 | ROC-AUC |
+|---|---|---|---|---|
+| Línea base ("siempre no") | 0.91 | 0.00 | 0.00 | 0.50 |
+| Regresión logística | 0.89 | **0.76** | 0.56 | 0.92 |
+| KNN (K = 5) | 0.92 | 0.37 | 0.46 | 0.85 |
+| **Random Forest** | 0.92 | 0.73 | **0.62** | **0.94** |
+
+La línea base acierta 91 % sin detectar ni una cancelación: con clases desbalanceadas la exactitud engaña.
+
+## Por qué aprendizaje por refuerzo (y no supervisado) para el repartidor
+
+- Supervisado exige la respuesta correcta de cada ejemplo durante el entrenamiento. Para "¿qué pedido
+  acepto?" nadie la conoce: solo se sabe después si le fue bien o mal. Eso es refuerzo (Géron, cap. 1 y el
+  capítulo de aprendizaje por refuerzo, donde está Q-learning).
+- No es no supervisado: no se buscan grupos, se buscan decisiones.
+- Donde sí existe la respuesta correcta (tiempo de entrega, cancelación) usamos supervisado: el predictor de arriba.
+- Por qué tabla y no red neuronal: 48 × 97 = 4.656 valores, se entrena en minutos y se puede leer celda por
+  celda. Una red se justifica con entradas complejas o enormes; aquí no hace falta.
 
 ## Reproducibilidad
 

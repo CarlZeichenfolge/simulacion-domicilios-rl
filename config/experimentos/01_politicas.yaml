@@ -4,7 +4,8 @@
 # castigo por rechazar, el agente aprende a escoger solo pedidos cómodos.
 nombre: 01_politicas
 episodios_entrenamiento: 300
-episodios_evaluacion: 30
+episodios_evaluacion: 30     # "validación": con estos días se tomaron las decisiones de diseño
+episodios_prueba: 30         # prueba final: días nunca vistos (python -m experimentos.prueba_final)
 semillas: [1, 2, 3, 4, 5]
 comun:
   metricas: {recolectar_cada: 0}
