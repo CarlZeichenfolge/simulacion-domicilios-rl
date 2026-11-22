@@ -41,6 +41,7 @@ ciudad:
       capacidad: 2
 
 eventos:
+  azar_propio: false          # true en los duelos: las dos ciudades viven la misma lluvia y los mismos trancones
   lluvia:
     modo: estocastica         # estocastica | siempre | nunca
     prob_empezar_por_hora: 0.15
@@ -204,16 +205,25 @@ prediccion:
     bosque_profundidad: [3, 5, 8, 12, 20]
   peso_clases: balanced       # solo ~10 % se cancela: sin esto el clasificador dice siempre "no"
 
+vistas:                       # comunes a 2D, 3D y duelos (vistas/velocidad.py)
+  # Velocidad en minutos simulados por SEGUNDO REAL; ↑/↓ recorren esta lista.
+  minutos_por_segundo: [0.5, 1, 2, 4, 8, 15, 30, 60, 120]
+  velocidad_inicial: 2        # una entrega (~30 min) se ve en ~15 s: se alcanza a seguir con los ojos
+  hora_inicio: 11             # las demos arrancan antes del almuerzo; de madrugada todos duermen
+  dt_maximo: 0.1              # s; recorta cuadros trabados para que la ciudad no salte
+
 vista_2d:
   ancho: 1100
   alto: 760
-  ticks_por_cuadro: 2
-  fps: 30
+  fps: 60
 
 vista_duelo:                  # python main.py --vista duelo (antes vs después, lado a lado)
   ancho: 1500
   alto: 900
   lado_mapa: 560
-  ticks_por_cuadro: 4
-  fps: 30
+  fps: 60
   muestrear_cada: 10          # minutos entre puntos de las curvas en vivo
+
+vista_duelo_3d:               # python main.py --vista duelo3d
+  separacion: 4               # cuadras de pasto entre las dos ciudades
+  distancia_camara: 0.78      # × ancho de las dos ciudades; menos = más cerca (la rueda del mouse también acerca)

@@ -44,7 +44,12 @@ class CiudadModel(mesa.Model):
         semilla_mapa = config["ciudad"].get("semilla_mapa")
         rng_mapa = random.Random(semilla_mapa) if semilla_mapa is not None else self.random
         self.ciudad = Ciudad(config["ciudad"], rng_mapa)
-        self.eventos = GestorEventos(config["eventos"], self.ciudad, self.random)
+        # azar_propio: la lluvia y los trancones usan su propio generador (sembrado con la
+        # misma semilla), así dos ciudades con políticas distintas viven el MISMO clima. Lo
+        # usan los duelos antes/después; apagado, todo sale de model.random como siempre.
+        rng_eventos = (random.Random(f"eventos-{semilla}") if config["eventos"]["azar_propio"]
+                       else self.random)
+        self.eventos = GestorEventos(config["eventos"], self.ciudad, rng_eventos)
 
         self.pedidos: list[Pedido] = []
         self.pedidos_activos: list[Pedido] = []

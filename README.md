@@ -31,7 +31,9 @@ pytest -q                                                    # pruebas (deben pa
 python main.py --vista ninguna --episodios 300               # entrena Q-learning, guarda resultados/tabla_q.npz
 python main.py --vista 2d                                    # demo con Pygame (usa la tabla entrenada)
 python main.py --vista 2d --politica cercano                 # demo con otra política
-python main.py --vista duelo --politica dqn                  # ANTES vs DESPUÉS: la red sin entrenar y entrenada, lado a lado
+python main.py --vista duelo3d                               # ANTES vs DESPUÉS en 3D: la red sin entrenar y entrenada, lado a lado
+python main.py --vista duelo                                 # lo mismo en 2D, con curvas en vivo
+python main.py --vista 3d --politica dqn --hora 7            # una ciudad 3D con la red, arrancando a las 7 a. m.
 python main.py --vista ninguna --politica dqn                # entrena la red, guarda resultados/red_dqn.pt
 python -m experimentos.correr config/experimentos/01_politicas.yaml   # un experimento
 python -m experimentos.correr (Get-ChildItem config/experimentos/*.yaml)   # todos
@@ -42,8 +44,12 @@ python -m experimentos.prediccion                            # predictor supervi
 python -m experimentos.graficas                              # PNG en resultados/
 ```
 
+Las demos arrancan a las **11:00** (de madrugada todos duermen) a **2 minutos simulados por segundo real**:
+una entrega de ~30 min se ve en ~15 s. `↑/↓` recorren 0.5, 1, 2, 4, 8, 15, 30, 60 y 120 min/s. La velocidad es
+por segundo real y no por cuadro, así que se ve igual en cualquier computador (`vistas/velocidad.py`).
+
 Controles de la vista 2D: `ESPACIO` pausa, `↑/↓` velocidad, `D` un minuto, `ESC` salir.
-Vista duelo: `ESPACIO` pausa, `↑/↓` velocidad, `ESC` salir.
+Duelos: `ESPACIO` pausa, `↑/↓` velocidad, `ESC` salir (en 3D, además, clic derecho gira y la rueda hace zoom).
 Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zoom, `ESPACIO` pausa, `↑/↓` velocidad.
 
 ## Estructura
@@ -214,18 +220,22 @@ obs, recompensa, terminado, truncado, info = env.step(env.action_space.sample())
 | Urgente | 74.4 | 23.9 | 2.4 |
 | Aleatorio | 11.2 | 20.4 | 1.2 |
 
-## Antes vs después (`python main.py --vista duelo --politica dqn`)
+## Antes vs después (`python main.py --vista duelo3d` o `--vista duelo`)
+
+En los duelos la lluvia y los trancones usan su propio generador (`eventos.azar_propio: true`), así las dos
+ciudades viven **el mismo clima** y lo único distinto es lo aprendido. Fuera de los duelos está apagado y todo
+sale de `model.random`, como en los experimentos.
 
 Si no existe `resultados/red_dqn.pt` (por ejemplo, recién clonado el repositorio), las demos usan la copia
 versionada `modelos/red_dqn_300dias.pt` (300 días, semilla 1 del experimento 5); igual con la tabla y
 `modelos/tabla_q_300dias.npz`.
 
-Dos ciudades lado a lado con la misma semilla. A la izquierda, **la misma red recién creada** (pesos
-iniciales, sin un día de entrenamiento); a la derecha, la red entrenada. Abajo se dibujan en vivo las
-cancelaciones y la recompensa acumuladas. Con la semilla 42, la red sin entrenar "espera" una y otra vez
-habiendo pedidos (130-150 rechazos por repartidor, cada uno cuesta $4.060) y termina el día en −1.347; la
-entrenada no rechaza ninguno y termina en +244. Es para **ver** el aprendizaje; la medición justa con
-muchos días está en el experimento 5.
+Dos ciudades lado a lado con la misma semilla y el mismo clima. A la izquierda, **la misma red recién
+creada** (pesos iniciales, sin un día de entrenamiento); a la derecha, la red entrenada. En 2D, abajo se
+dibujan en vivo las cancelaciones y la recompensa acumuladas. La red sin entrenar "espera" una y otra vez
+habiendo pedidos (cada rechazo cuesta $4.060). Con la semilla 42, al final del día la sin entrenar lleva
+16 cancelados y la entrenada 3. Es para **ver** el aprendizaje; la medición justa con muchos días está
+en el experimento 5.
 
 ## Predictor supervisado (`experimentos/prediccion.py`)
 

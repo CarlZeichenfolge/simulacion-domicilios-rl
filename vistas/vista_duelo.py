@@ -23,6 +23,7 @@ import math
 import pygame
 
 from sim.model import CiudadModel
+from vistas.velocidad import Velocidad
 from vistas.vista_2d import FONDO, PANEL, TEXTO, TEXTO_SUAVE, Vista2D
 
 # Azul = sin entrenar, ámbar = entrenada. Tonos claros porque el fondo es oscuro.
@@ -74,12 +75,13 @@ class VistaDuelo:
         cfg = despues.cfg["vista_duelo"]
         self.ancho, self.alto = cfg["ancho"], cfg["alto"]
         self.lado = cfg["lado_mapa"]
-        self.ticks_por_cuadro = cfg["ticks_por_cuadro"]
+        self.velocidad = Velocidad(despues.cfg["vistas"])
         self.fps = cfg["fps"]
         self.muestrear_cada = cfg["muestrear_cada"]
         self.pausa = False
-        # Series para las curvas: (minuto, cancelados, recompensa) de cada ciudad.
-        self.series = {"antes": [(0, 0, 0.0)], "despues": [(0, 0, 0.0)]}
+        # Series para las curvas: (minuto, cancelados, recompensa) de cada ciudad, desde donde arrancó la demo.
+        self.series = {clave: [(m.reloj.tick, m.conteo["cancelados"], _recompensa(m))]
+                       for clave, m in (("antes", antes), ("despues", despues))}
 
     def correr(self) -> None:
         pygame.init()
@@ -99,22 +101,26 @@ class VistaDuelo:
                     if evento.key == pygame.K_SPACE:
                         self.pausa = not self.pausa
                     elif evento.key == pygame.K_UP:
-                        self.ticks_por_cuadro = min(60, self.ticks_por_cuadro * 2)
+                        self.velocidad.subir()
                     elif evento.key == pygame.K_DOWN:
-                        self.ticks_por_cuadro = max(1, self.ticks_por_cuadro // 2)
+                        self.velocidad.bajar()
+            dt = reloj.tick(self.fps) / 1000
             if not self.pausa:
-                for _ in range(self.ticks_por_cuadro):
-                    self._avanzar()
+                self._avanzar(self.velocidad.pasos(dt))
             self._dibujar(pantalla)
             pygame.display.flip()
-            reloj.tick(self.fps)
 
-    def _avanzar(self) -> None:
-        for clave, modelo in (("antes", self.antes), ("despues", self.despues)):
-            if modelo.running:
-                modelo.step()
+    def _avanzar(self, minutos: int) -> None:
+        """Avanza las dos ciudades los mismos minutos (mismo reloj) y anota las curvas."""
+        for clave, mapa in self.mapas.items():
+            for i in range(minutos):
+                modelo = mapa.modelo
+                if not modelo.running:
+                    break
+                mapa.avanzar(1)  # de a un minuto para no perder ningún punto de las curvas
                 if modelo.reloj.tick % self.muestrear_cada == 0:
                     self.series[clave].append((modelo.reloj.tick, modelo.conteo["cancelados"], _recompensa(modelo)))
+            mapa.fraccion = self.velocidad.fraccion
 
     # ----------------------------------------------------------------- dibujo
     def _dibujar(self, pantalla) -> None:
@@ -132,7 +138,7 @@ class VistaDuelo:
         self._grafica(pantalla, (40, y_graf, ancho_graf, alto_graf), "Pedidos cancelados (acumulado)", 1)
         self._grafica(pantalla, (mitad + 20, y_graf, ancho_graf, alto_graf),
                       "Recompensa de los repartidores (acumulada, miles de $)", 2)
-        pie = f"{self.despues.reloj.texto()}   x{self.ticks_por_cuadro} min/cuadro  {'PAUSA' if self.pausa else ''}" \
+        pie = f"{self.despues.reloj.texto()}   {self.velocidad.texto()}  {'PAUSA' if self.pausa else ''}" \
               "   ESPACIO pausa  ↑↓ velocidad  ESC salir"
         pantalla.blit(self.fuente_chica.render(pie, True, TEXTO_SUAVE), (40, self.alto - 18))
 

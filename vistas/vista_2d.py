@@ -2,7 +2,7 @@
 
 Controles:
     ESPACIO  pausa / sigue
-    ↑ / ↓    más o menos minutos simulados por cuadro
+    ↑ / ↓    más o menos minutos simulados por segundo
     D        avanza un solo minuto (en pausa)
     ESC      salir
 """
@@ -13,6 +13,7 @@ import pygame
 from sim.agentes import EstadoRepartidor
 from sim.model import CiudadModel
 from sim.pedidos import EstadoPedido
+from vistas.velocidad import Velocidad
 
 FONDO = (24, 26, 31)
 CALLE = (70, 74, 84)
@@ -33,12 +34,29 @@ class Vista2D:
         self.modelo = modelo
         cfg = modelo.cfg["vista_2d"]
         self.ancho, self.alto = cfg["ancho"], cfg["alto"]
-        self.ticks_por_cuadro = cfg["ticks_por_cuadro"]
+        self.velocidad = Velocidad(modelo.cfg["vistas"])
         self.fps = cfg["fps"]
         self.pausa = False
         self.margen = 40
         self.lado_mapa = self.alto - 2 * self.margen
         self.celda = self.lado_mapa / modelo.ciudad.tamano
+        self._anterior: dict[int, tuple] = {}  # posición de cada moto un minuto antes (para suavizar)
+        self.fraccion = 1.0
+
+    def avanzar(self, minutos: int) -> None:
+        """Simula `minutos` minutos; antes del último guarda dónde estaba cada moto para
+        dibujarla moviéndose suave entre esa posición y la nueva (ver Velocidad.fraccion)."""
+        for i in range(minutos):
+            if not self.modelo.running:
+                break
+            if i == minutos - 1:
+                self._anterior = {r.unique_id: r.posicion_continua() for r in self.modelo.repartidores}
+            self.modelo.step()
+
+    def posicion_suave(self, r) -> tuple[float, float]:
+        x1, y1 = r.posicion_continua()
+        x0, y0 = self._anterior.get(r.unique_id, (x1, y1))
+        return x0 + (x1 - x0) * self.fraccion, y0 + (y1 - y0) * self.fraccion
 
     # ------------------------------------------------------------- coordenadas
     def a_pantalla(self, x: float, y: float) -> tuple[int, int]:
@@ -64,18 +82,18 @@ class Vista2D:
                     if evento.key == pygame.K_SPACE:
                         self.pausa = not self.pausa
                     elif evento.key == pygame.K_UP:
-                        self.ticks_por_cuadro = min(60, self.ticks_por_cuadro * 2)
+                        self.velocidad.subir()
                     elif evento.key == pygame.K_DOWN:
-                        self.ticks_por_cuadro = max(1, self.ticks_por_cuadro // 2)
+                        self.velocidad.bajar()
                     elif evento.key == pygame.K_d and self.modelo.running:
-                        self.modelo.step()
+                        self.avanzar(1)
+                        self.fraccion = 1.0
+            dt = reloj.tick(self.fps) / 1000
             if not self.pausa:
-                for _ in range(self.ticks_por_cuadro):
-                    if self.modelo.running:
-                        self.modelo.step()
+                self.avanzar(self.velocidad.pasos(dt))
+                self.fraccion = self.velocidad.fraccion
             self.dibujar(pantalla)
             pygame.display.flip()
-            reloj.tick(self.fps)
 
     # ----------------------------------------------------------------- dibujo
     def dibujar(self, pantalla) -> None:
@@ -156,7 +174,7 @@ class Vista2D:
 
     def _repartidores(self, pantalla) -> None:
         for r in self.modelo.repartidores:
-            x, y = self.a_pantalla(*r.posicion_continua())
+            x, y = self.a_pantalla(*self.posicion_suave(r))
             if r.ruta:  # ruta planeada por A*
                 puntos = [(x, y)] + [self.a_pantalla(*n) for n in r.ruta]
                 pygame.draw.lines(pantalla, REPARTIDOR[r.estado], False, puntos, 1)
@@ -215,5 +233,5 @@ class Vista2D:
             pantalla.blit(self.fuente_chica.render(texto, True, TEXTO_SUAVE), (x0 + 38, y))
             y += 16
         y = self.alto - 70
-        linea(f"x{self.ticks_por_cuadro} min/cuadro  {'PAUSA' if self.pausa else ''}", color=TEXTO_SUAVE)
+        linea(f"{self.velocidad.texto()}  {'PAUSA' if self.pausa else ''}", color=TEXTO_SUAVE)
         linea("ESPACIO pausa  ↑↓ velocidad  D paso  ESC salir", self.fuente_chica, TEXTO_SUAVE)

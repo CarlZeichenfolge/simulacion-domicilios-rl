@@ -3,8 +3,13 @@
     python main.py --vista ninguna --episodios 300 --semilla 42   # entrena sin ventana
     python main.py --vista 2d                                      # demo con Pygame
     python main.py --vista 3d                                      # demo con Ursina
-    python main.py --vista duelo                                   # antes vs después, lado a lado
+    python main.py --vista duelo                                   # antes vs después de la red, en 2D
+    python main.py --vista duelo3d                                 # antes vs después de la red, en 3D
+    python main.py --vista 3d --politica dqn --hora 7              # la red en 3D, arrancando a las 7 a. m.
     python main.py --vista ninguna --politica dqn                  # entrena la red neuronal
+
+Las demos arrancan a las 11:00 (vistas.hora_inicio) a 2 minutos simulados por
+segundo real; con ↑/↓ se acelera o se frena.
 
 Con --vista ninguna se entrena la política del YAML y se guardan
 resultados/entrenamiento.csv y el modelo (resultados/tabla_q.npz para la tabla,
@@ -86,15 +91,19 @@ def crear_duelo(config: dict, semilla: int, entrenado: CiudadModel):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", default="config/base.yaml")
-    parser.add_argument("--vista", choices=["ninguna", "2d", "3d", "duelo"], default="ninguna")
+    parser.add_argument("--vista", choices=["ninguna", "2d", "3d", "duelo", "duelo3d"], default="ninguna")
     parser.add_argument("--episodios", type=int, default=300)
     parser.add_argument("--semilla", type=int, default=None)
-    parser.add_argument("--politica", default=None, help="sobrescribe repartidores.politica del YAML")
+    parser.add_argument("--politica", default=None,
+                        help="sobrescribe repartidores.politica del YAML (en los duelos, por defecto dqn)")
     parser.add_argument("--tabla-q", default=None,
                         help="modelo a guardar/cargar (por defecto tabla_q.npz o red_dqn.pt según la política)")
+    parser.add_argument("--hora", type=float, default=None,
+                        help="hora a la que arranca la demo (por defecto vistas.hora_inicio del YAML)")
     args = parser.parse_args()
 
-    cambios = {"repartidores": {"politica": args.politica}} if args.politica else {}
+    politica = args.politica or ("dqn" if args.vista in ("duelo", "duelo3d") else None)
+    cambios = {"repartidores": {"politica": politica}} if politica else {}
     config = cargar_config(args.config, cambios)
     semilla = config["semilla"] if args.semilla is None else args.semilla
     ruta_q = Path(args.tabla_q) if args.tabla_q else (
@@ -105,11 +114,26 @@ def main():
         entrenar(config, args.episodios, semilla, ruta_q)
         return
 
+    from vistas.velocidad import adelantar
+    hora = config["vistas"]["hora_inicio"] if args.hora is None else args.hora
+    if args.vista in ("duelo", "duelo3d"):
+        # Mismo clima en las dos ciudades: si no, una puede tener lluvia y la otra no, y la
+        # diferencia ya no sería solo de lo aprendido.
+        config = fusionar(config, {"eventos": {"azar_propio": True}})
     modelo = crear_modelo_demo(config, semilla, ruta_q)
-    if args.vista == "duelo":
-        from vistas.vista_duelo import VistaDuelo
-        VistaDuelo(*crear_duelo(config, semilla, modelo)).correr()
-    elif args.vista == "2d":
+    if args.vista in ("duelo", "duelo3d"):
+        antes, despues, titulo_antes, titulo_despues = crear_duelo(config, semilla, modelo)
+        adelantar(antes, hora)
+        adelantar(despues, hora)
+        if args.vista == "duelo":
+            from vistas.vista_duelo import VistaDuelo
+            VistaDuelo(antes, despues, titulo_antes, titulo_despues).correr()
+        else:
+            from vistas.vista_3d import VistaDuelo3D
+            VistaDuelo3D(antes, despues, titulo_antes, titulo_despues).correr()
+        return
+    adelantar(modelo, hora)
+    if args.vista == "2d":
         from vistas.vista_2d import Vista2D
         Vista2D(modelo).correr()
     else:
