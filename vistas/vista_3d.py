@@ -30,10 +30,11 @@ from vistas.geometria import Malla, hex_a_color, mezclar
 from vistas.maqueta_3d import (ANCHO_CALLE, ESCALA, LARGO_CARRIL, PROFUNDIDAD_DIORAMA, Maqueta, malla_icono,
                                malla_lluvia, malla_moto, malla_nube, malla_pin, malla_trancones)
 from vistas.marcador import texto_marcador
-from vistas.velocidad import Velocidad
+from vistas.velocidad import Velocidad, dias_del_episodio, saltar_al_dia_siguiente
 
 MASCARA_SOMBRA = 0b0001  # cámara de la luz del sol (ver ursina.lights.DirectionalLight)
-AYUDA = "clic der: girar   rueda: zoom   C: cámara automática   ESPACIO: pausa   flechas: velocidad   ESC: salir"
+AYUDA = ("clic der: girar   rueda: zoom   C: cámara automática   ESPACIO: pausa   flechas: velocidad   "
+         "N: día siguiente   ESC: salir")
 
 
 # ------------------------------------------------------------------ utilidades
@@ -344,7 +345,10 @@ class Vista3D:
         self.color_titulo = color_titulo
         self.velocidad = velocidad or Velocidad(modelo.cfg["vistas"])
         self.pausa = False
-        self.rng = random.Random(self.cfg["semilla_decorado"])  # solo adorno: no toca el azar del modelo
+        # Solo adorno (árboles, colores de las casas): no toca el azar del modelo. Depende también
+        # del mapa, para que cada mapa se vea distinto y no solo con los edificios corridos.
+        self.semilla_adorno = f"{self.cfg['semilla_decorado']}-{modelo.cfg['ciudad']['semilla_mapa']}"
+        self.rng = random.Random(self.semilla_adorno)
         self.maqueta = Maqueta(modelo.ciudad, self.cfg, self.rng, desplazamiento)
         self.col = self.maqueta.col
         self.motos: dict[int, dict] = {}
@@ -469,10 +473,18 @@ class Vista3D:
 
     # ---------------------------------------------------------------- entrada
     def tecla(self, tecla: str) -> None:
+        if tecla == "n":
+            self.saltar_dia()
+            return
         tecla_comun(tecla, self.velocidad, self.alternar_pausa, self.ambiente.camara)
 
     def alternar_pausa(self) -> None:
         self.pausa = not self.pausa
+
+    def saltar_dia(self) -> None:
+        """Tecla N: a la mañana siguiente sin dibujar la noche."""
+        saltar_al_dia_siguiente(self.modelo, self.modelo.cfg["vistas"]["hora_al_saltar"])
+        self._anterior = {}  # las motos aparecen donde quedaron, sin "deslizarse" desde ayer
 
     # ----------------------------------------------------------------- cuadro
     def actualizar_cuadro(self) -> None:
@@ -584,7 +596,7 @@ class Vista3D:
         trancadas = [(u, v) for u, v in grafo.edges if grafo.edges[u, v]["factor_trancon"] > 1]
         if trancadas:  # fuera de hora pico no hay calles trancadas
             franja, carros, luces = malla_trancones(self.maqueta, trancadas,
-                                                    random.Random(self.cfg["semilla_decorado"]), self.cfg["trafico"])
+                                                    random.Random(self.semilla_adorno), self.cfg["trafico"])
             s = self._sombreado
             e_luces = Entity(model=a_malla_ursina(luces), shader=s.luces_trafico)
             e_luces.hide(MASCARA_SOMBRA)
@@ -757,7 +769,12 @@ class Vista3D:
         clima = f"{etiqueta('#8fc4ff')}Lluvia" if m.eventos.lloviendo else f"{etiqueta('#ffe08a')}Despejado"
         trafico = (f"{etiqueta('#ff6b5e')}Hora pico" if m.eventos.trancon_activo
                    else f"{etiqueta('#8fdc8f')}Tráfico normal")
-        return f"{etiqueta(h['suave'])}Día {m.reloj.dia + 1}   {clima}   {trafico}"
+        dia = min(m.reloj.dia + 1, dias_del_episodio(m))  # al terminar, el reloj ya marca el día siguiente
+        return f"{etiqueta(h['suave'])}Día {dia} de {dias_del_episodio(m)}   {clima}   {trafico}"
+
+    def mapa(self) -> str:
+        h = self.cfg["hud"]
+        return f"{etiqueta(h['suave'])}Mapa {etiqueta(h['acento'])}#{self.modelo.cfg['ciudad']['semilla_mapa']}"
 
     def reloj(self) -> str:
         r = self.modelo.reloj
@@ -778,7 +795,8 @@ class Vista3D:
         pausa = f"   {etiqueta(h['acento'])}PAUSA" if self.pausa else ""
         politica = m.cfg["repartidores"]["politica"]
         self.panel_izq.poner(f"{self.chips()}\n{etiqueta(h['suave'])}Velocidad {self.velocidad.texto()}{pausa}   "
-                             f"Política {etiqueta(h['acento'])}{politica}\n\n{self.resumen()}", titulo=self.reloj())
+                             f"Política {etiqueta(h['acento'])}{politica}   {self.mapa()}\n\n{self.resumen()}",
+                             titulo=self.reloj())
         self.panel_der.poner(self.lista_repartidores())
 
 
@@ -840,6 +858,10 @@ class VistaDuelo3D:
         if tecla == "m":
             self.panel_marcador.enabled = not self.panel_marcador.enabled
             return
+        if tecla == "n":  # las dos a la vez: el reloj de las dos ciudades siempre es el mismo
+            self.izq.saltar_dia()
+            self.der.saltar_dia()
+            return
         tecla_comun(tecla, self.velocidad, self.alternar_pausa, self.ambiente.camara)
 
     def alternar_pausa(self) -> None:
@@ -862,7 +884,7 @@ class VistaDuelo3D:
                       - sum(r.recompensa_acumulada for r in m_izq.repartidores))
         pausa = f"   {etiqueta(h['acento'])}PAUSA" if self.pausa else ""
         self.panel_centro.poner(f"{self.der.chips()}\n{etiqueta(h['suave'])}Velocidad {self.velocidad.texto()}"
-                                f"{pausa}\n{etiqueta(h['suave'])}Recompensa después − antes:  "
+                                f"{pausa}   {self.der.mapa()}\n{etiqueta(h['suave'])}Recompensa después − antes:  "
                                 f"{etiqueta(h['acento'])}{diferencia:+.1f}", titulo=self.der.reloj())
         # Al terminar el día el marcador aparece solo, una vez (con M se oculta o se vuelve a ver).
         if not (m_izq.running or m_der.running) and not self.marcador_mostrado:

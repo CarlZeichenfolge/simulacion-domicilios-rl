@@ -50,8 +50,33 @@ una entrega de ~30 min se ve en ~15 s. `↑/↓` recorren 0.5, 1, 2, 4, 8, 15, 3
 por segundo real y no por cuadro, así que se ve igual en cualquier computador (`vistas/velocidad.py`).
 
 Controles de la vista 2D: `ESPACIO` pausa, `↑/↓` velocidad, `D` un minuto, `ESC` salir.
-Duelos: `ESPACIO` pausa, `↑/↓` velocidad, `M` marcador, `ESC` salir (en 3D, además, clic derecho gira, la rueda hace zoom y `C` gira la cámara sola).
-Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zoom, `C` cámara automática, `ESPACIO` pausa, `↑/↓` velocidad.
+Duelos: `ESPACIO` pausa, `↑/↓` velocidad, `M` marcador, `ESC` salir (en 3D, además, clic derecho gira, la rueda hace zoom, `C` gira la cámara sola y `N` salta al día siguiente).
+Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zoom, `C` cámara automática, `ESPACIO` pausa, `↑/↓` velocidad, `N` día siguiente.
+
+Las demos siguen **una semana** (`vistas.dias_demo`; `python main.py --vista duelo3d --dias 3` para otro número). Los
+totales del marcador se acumulan durante toda la semana; con `M` se ve cómo van ("HASTA AHORA") y al final aparece
+solo ("FIN DE LA SEMANA"). `N` simula la noche sin dibujarla y deja la ciudad a las 7:00 del día siguiente
+(`vistas.hora_al_saltar`). Entrenar sigue siendo por días sueltos (`tiempo.dias_por_episodio: 1`).
+
+**Cada demo abre en un mapa distinto**, uno de 100 000 (numerados de 0 a 99999; cada número reparte distinto los
+restaurantes, casas, oficinas y la universidad, y cambia los árboles y colores). El número sale en pantalla y en la
+consola; para repetir uno: `python main.py --vista duelo3d --mapa 48213`. Para apagarlo: `vistas.mapa_aleatorio: false`.
+Entrenar y los experimentos siguen en el mapa fijo `ciudad.semilla_mapa: 7` (salvo que se pase `--mapa`).
+
+Por qué: la red se entrenó en un solo mapa; si la demo siempre abre en ese, parece que se lo aprendió de memoria.
+Su estado no tiene el mapa (distancias por categoría, edad del pedido, hora, lluvia), así que decide igual en
+ciudades que nunca vio. En 20 mapas nuevos al azar, un día cada uno (mismas semillas para todas las políticas):
+
+| Política | Cancelación | Entregados |
+|---|---|---|
+| DQN entrenada (en el mapa 7) | 18.4 % | 66.8 |
+| DQN sin entrenar | 39.8 % | 54.0 |
+| aleatoria | 23.5 % | 65.1 |
+| cercano | 18.4 % | 67.2 |
+| urgente | 33.4 % | 57.8 |
+
+En mapas nuevos lo aprendido sigue sirviendo: cancela la mitad que la red sin entrenar. Los mapas al azar son más
+difíciles que el 7 (a veces los restaurantes quedan en esquinas opuestas) y la dispersión entre mapas es grande.
 
 La vista 3D es una maqueta low poly que vive el día completo: el cielo, el sol y las sombras siguen el reloj
 simulado (amanecer, atardecer, noche con estrellas), de noche se prenden ventanas y faroles, la lluvia nubla

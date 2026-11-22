@@ -10,7 +10,7 @@ No importa pygame ni ursina: lo usan las dos vistas.
 from __future__ import annotations
 
 from sim.model import CiudadModel
-from sim.reloj import MINUTOS_POR_HORA
+from sim.reloj import MINUTOS_POR_DIA, MINUTOS_POR_HORA
 
 TOLERANCIA = 1e-9  # error de redondeo de punto flotante, no un parámetro de la demo
 
@@ -64,3 +64,19 @@ def adelantar(modelo: CiudadModel, hora: float) -> None:
     """
     while modelo.running and modelo.reloj.tick < hora * MINUTOS_POR_HORA:
         modelo.step()
+
+
+def saltar_al_dia_siguiente(modelo: CiudadModel, hora: float) -> None:
+    """Corre sin dibujar hasta `hora` del día siguiente (o hasta que termine el episodio).
+
+    Por qué: la demo sigue una semana y a velocidad cómoda serían más de 80 minutos,
+    casi todos de noche con la ciudad dormida. Igual que adelantar(), no cambia la
+    simulación: es la misma que se vería mirando sin saltar.
+    """
+    objetivo = (modelo.reloj.dia + 1) * MINUTOS_POR_DIA + hora * MINUTOS_POR_HORA
+    while modelo.running and modelo.reloj.minuto_absoluto < objetivo:
+        modelo.step()
+
+
+def dias_del_episodio(modelo: CiudadModel) -> int:
+    return round(modelo.duracion / MINUTOS_POR_DIA)

@@ -19,6 +19,7 @@ mostrar al repartidor ya entrenado.
 from __future__ import annotations
 
 import argparse
+import secrets
 from pathlib import Path
 
 import pandas as pd
@@ -50,6 +51,26 @@ def entrenar(config: dict, episodios: int, semilla: int, ruta_q: Path) -> None:
     if hasattr(politica, "guardar"):
         politica.guardar(ruta_q)
         print(f"Modelo guardado en {ruta_q}")
+
+
+def elegir_mapa(config: dict, pedido: int | None) -> int:
+    """Número de mapa de la demo: el que se pidió con --mapa o uno al azar.
+
+    Por qué al azar: la red se entrenó en UN mapa; si la demo abre siempre en ese,
+    parece que se lo aprendió de memoria. En un mapa nuevo cada vez se ve que decide
+    con lo que percibe (distancias, edad del pedido, hora), no con el mapa.
+
+    Por qué `secrets` y no el azar del modelo: aquí no se simula nada, solo se escoge
+    el escenario. Lo que pase después es reproducible repitiendo `--mapa N`.
+    """
+    posibles = config["vistas"]["mapas_posibles"]
+    if pedido is not None:
+        if not 0 <= pedido < posibles:
+            raise SystemExit(f"--mapa debe estar entre 0 y {posibles - 1}")
+        return pedido
+    if not config["vistas"]["mapa_aleatorio"]:
+        return config["ciudad"]["semilla_mapa"]
+    return secrets.randbelow(posibles)
 
 
 def crear_modelo_demo(config: dict, semilla: int, ruta_q: Path) -> CiudadModel:
@@ -98,6 +119,10 @@ def main():
                         help="sobrescribe repartidores.politica del YAML (en los duelos, por defecto dqn)")
     parser.add_argument("--tabla-q", default=None,
                         help="modelo a guardar/cargar (por defecto tabla_q.npz o red_dqn.pt según la política)")
+    parser.add_argument("--mapa", type=int, default=None,
+                        help="número de mapa (0 a 99999). En las demos, sin esto sale uno al azar")
+    parser.add_argument("--dias", type=int, default=None,
+                        help="días que sigue la demo (por defecto vistas.dias_demo del YAML: una semana)")
     parser.add_argument("--hora", type=float, default=None,
                         help="hora a la que arranca la demo (por defecto vistas.hora_inicio del YAML)")
     args = parser.parse_args()
@@ -110,12 +135,20 @@ def main():
         RED_DQN if config["repartidores"]["politica"] == "dqn" else TABLA_Q)
 
     if args.vista == "ninguna":
+        if args.mapa is not None:  # entrenar en otro mapa solo si se pide; por defecto, el del YAML
+            config = fusionar(config, {"ciudad": {"semilla_mapa": elegir_mapa(config, args.mapa)}})
         config["metricas"]["recolectar_cada"] = 0
         entrenar(config, args.episodios, semilla, ruta_q)
         return
 
     from vistas.velocidad import adelantar
     hora = config["vistas"]["hora_inicio"] if args.hora is None else args.hora
+    # Entrenar es por días sueltos; las demos siguen varios días seguidos (por defecto una semana).
+    dias = config["vistas"]["dias_demo"] if args.dias is None else args.dias
+    config = fusionar(config, {"tiempo": {"dias_por_episodio": dias}})
+    mapa = elegir_mapa(config, args.mapa)
+    config = fusionar(config, {"ciudad": {"semilla_mapa": mapa}})
+    print(f"Mapa #{mapa}   (para repetir este mismo mapa: python main.py --vista {args.vista} --mapa {mapa})")
     if args.vista in ("duelo", "duelo3d"):
         # Mismo clima en las dos ciudades: si no, una puede tener lluvia y la otra no, y la
         # diferencia ya no sería solo de lo aprendido.

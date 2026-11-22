@@ -12,7 +12,7 @@ ciudad:
   tamano: 10                  # manzanas por lado -> 11 x 11 intersecciones
   longitud_calle_m: 400       # una cuadra "grande": cruzar la ciudad son ~8 km
   velocidad_base_m_min: 300   # moto en ciudad, unos 18 km/h
-  semilla_mapa: 7             # mapa fijo entre episodios; null = depende de la semilla del episodio
+  semilla_mapa: 7             # mapa fijo para ENTRENAR y los experimentos; null = depende de la semilla del episodio
   edificios:
     universidades: 1
     oficinas: 8
@@ -217,6 +217,10 @@ vistas:                       # comunes a 2D, 3D y duelos (vistas/velocidad.py)
   minutos_por_segundo: [0.5, 1, 2, 4, 8, 15, 30, 60, 120]
   velocidad_inicial: 2        # una entrega (~30 min) se ve en ~15 s: se alcanza a seguir con los ojos
   hora_inicio: 11             # las demos arrancan antes del almuerzo; de madrugada todos duermen
+  dias_demo: 7                # las demos siguen una semana (python main.py --dias N para cambiarlo)
+  mapa_aleatorio: true        # cada demo abre en un mapa distinto (python main.py --mapa N repite uno)
+  mapas_posibles: 100000      # mapas numerados de 0 a 99999: cada número ubica distinto los edificios
+  hora_al_saltar: 7           # tecla N en 3D: salta a esta hora del día siguiente
   dt_maximo: 0.1              # s; recorta cuadros trabados para que la ciudad no salte
   avisos:                     # letreros flotantes "rechazó" / "cancelado" en la vista 3D
     duracion: 2.0             # segundos reales que dura cada letrero

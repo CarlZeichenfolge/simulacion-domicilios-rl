@@ -6,6 +6,9 @@ from __future__ import annotations
 
 from sim.metricas import resumen_episodio
 from sim.model import CiudadModel
+from sim.reloj import MINUTOS_POR_DIA
+
+DIAS_SEMANA = 7
 
 # (clave de resumen_episodio, etiqueta, formato, ¿más es mejor?)
 METRICAS = [
@@ -36,11 +39,21 @@ def filas_marcador(antes: CiudadModel, despues: CiudadModel) -> list[tuple[str, 
     return filas
 
 
+def titulo_marcador(modelo: CiudadModel) -> str:
+    """Al terminar: "FIN DEL DÍA 1" o "FIN DE LA SEMANA". A mitad de camino (tecla M): "HASTA AHORA"."""
+    dias = round(modelo.duracion / MINUTOS_POR_DIA)
+    if modelo.running:
+        return f"HASTA AHORA (DÍA {modelo.reloj.dia + 1} DE {dias})"
+    if dias == 1:
+        return f"FIN DEL DÍA {modelo.reloj.dia}"
+    return "FIN DE LA SEMANA" if dias == DIAS_SEMANA else f"FIN DE LOS {dias} DÍAS"
+
+
 def texto_marcador(antes: CiudadModel, despues: CiudadModel, titulo_antes: str, titulo_despues: str) -> str:
     """El marcador como texto de ancho fijo (las vistas lo pintan con una fuente monoespaciada o tal cual)."""
     filas = filas_marcador(antes, despues)
     ancho = max(len(f[0]) for f in filas)
-    lineas = [f"FIN DEL DÍA {despues.reloj.dia}", "",
+    lineas = [titulo_marcador(despues), "",
               f"{'':<{ancho}}   {'ANTES':>10}   {'DESPUÉS':>10}",
               ]
     for etiqueta, a, d, ganador in filas:

@@ -208,7 +208,7 @@ class Vista2D:
         clima = "Lluvia" if m.eventos.lloviendo else "Seco"
         trafico = "Hora pico (trancón)" if m.eventos.trancon_activo else "Tráfico normal"
         linea(f"{clima}  |  {trafico}", color=TEXTO_SUAVE, salto=30)
-        linea(f"Política: {m.cfg['repartidores']['politica']}", salto=30)
+        linea(f"Política: {m.cfg['repartidores']['politica']}   Mapa #{m.cfg['ciudad']['semilla_mapa']}", salto=30)
         linea("Pedidos", self.fuente_grande, salto=28)
         linea(f"  creados     {m.conteo['creados']:>5}")
         linea(f"  entregados  {m.conteo['entregados']:>5}")

@@ -164,7 +164,8 @@ class VistaDuelo:
         self._grafica(pantalla, (40, y_graf, ancho_graf, alto_graf), "Pedidos cancelados (acumulado)", 1)
         self._grafica(pantalla, (mitad + 20, y_graf, ancho_graf, alto_graf),
                       "Recompensa de los repartidores (acumulada, miles de $)", 2)
-        pie = f"{self.despues.reloj.texto()}   {self.velocidad.texto()}  {'PAUSA' if self.pausa else ''}" \
+        pie = f"{self.despues.reloj.texto()}   Mapa #{self.despues.cfg['ciudad']['semilla_mapa']}   " \
+              f"{self.velocidad.texto()}  {'PAUSA' if self.pausa else ''}" \
               "   ESPACIO pausa  ↑↓ velocidad  M marcador  ESC salir"
         pantalla.blit(self.fuente_chica.render(pie, True, TEXTO_SUAVE), (40, self.alto - 18))
 
