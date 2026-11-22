@@ -83,7 +83,15 @@ simulado (amanecer, atardecer, noche con estrellas), de noche se prenden ventana
 el cielo poco a poco y en hora pico las calles trancadas se llenan de carros que avanzan a pedazos (se mueven
 en la tarjeta de video, ver `vistas/sombreado.py`). Los repartidores llevan mochila de domicilios naranja; su
 estado lo dicen la luz sobre la mochila y el aro en el piso, y mientras llevan un pedido flota encima la comida
-de ese restaurante (pizza, hamburguesa o sushi). Cada pedido es un alfiler sobre la casa del cliente. Colores, horas y cantidades: `vista_3d` en
+de ese restaurante (pizza, hamburguesa o sushi). Cada pedido es un alfiler sobre la casa del cliente.
+
+Cada **habitante** tiene un mini ícono sobre el edificio donde está (su casa, la oficina o la universidad): el
+círculo es su hambre (verde → ámbar → rojo, con el número adentro; "z" si duerme) y el aro dice qué hace
+(esperando domicilio, cocinando, comiendo afuera). **Clic en el ícono** abre un panel con su cabeza: hambre,
+energía y plata; su última decisión con la utilidad de cada opción que comparó (cocinar, salir, pedir) y cuál
+ganó; si al pedir estaba explorando un restaurante que no era su favorito (el ε del bandit); lo que espera de
+cada restaurante (lo aprendido) y lo que ha comido hoy. `H` oculta los íconos. El habitante solo guarda su
+última decisión para poder explicarla (`Habitante.ultima_decision`); no cambia nada de la simulación. Colores, horas y cantidades: `vista_3d` en
 `config/base.yaml`; si tu pantalla la ve oscura, sube `vista_3d.exposicion`.
 
 ## Estructura

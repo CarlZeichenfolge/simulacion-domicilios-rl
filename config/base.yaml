@@ -270,6 +270,10 @@ vista_3d:                     # python main.py --vista 3d / duelo3d (vistas/vist
   # La comida que flota sobre la moto mientras lleva un pedido (altura en unidades de mundo,
   # giro en grados/s, rebote: cuánto sube y baja, frecuencia_rebote en rad/s)
   comida_en_moto: {altura: 2.4, escala: 1.8, giro: 120, rebote: 0.12, frecuencia_rebote: 4}
+  # Mini ícono de cada habitante sobre el edificio donde está (clic = ver sus decisiones; H los oculta).
+  # altura sobre el techo, espacio entre íconos del mismo edificio, por_fila antes de saltar de fila.
+  habitantes: {escala: 0.5, altura: 0.55, espacio: 0.56, por_fila: 4, agrandar: 1.35, ancho_barra: 24,
+               margen_panel: 0.15, margen_panel_duelo: 0.25}
   nubes: {cantidad: 8, altura: [4, 8], distancia: [1.5, 2.1], arco: [-15, 195], escala: [0.9, 1.6], velocidad: 0.35, gris_lluvia: 0.3}
   fondo_bajo: 0.35            # debajo del horizonte: mezcla horizonte→cenit (la maqueta flota en el cielo)
   lluvia: {gotas: 900, alto: 9, velocidad: 14, transicion: 0.5, opacidad: 0.55}
@@ -360,6 +364,9 @@ vista_3d:                     # python main.py --vista 3d / duelo3d (vistas/vist
     restaurantes: {Pizza: "#e34948", Hamburguesas: "#eda100", Sushi: "#1baf7a"}
     repartidor: {libre: "#e6e6e6", yendo_a_restaurante: "#ffd400", yendo_a_cliente: "#3fb6ff"}
     pedido: {creado: "#c8c8c8", en_preparacion: "#eda100", listo: "#78dc78", en_camino: "#3fb6ff", urgente: "#ff3b3b"}
+    hambre: {saciado: "#5cc96b", medio: "#f2c14e", hambre: "#ff5a4e"}   # relleno del ícono del habitante
+    estado_habitante: {bien: "#ffffff", durmiendo: "#3c4560", esperando: "#3fb6ff", cocinando: "#ff9f43",
+                       afuera: "#b07cf0", hambre: "#ff3b3b"}                 # aro del ícono
     masa: "#e0a95b"
     queso: "#ffd35c"
     pepperoni: "#c0392b"

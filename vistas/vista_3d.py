@@ -34,7 +34,7 @@ from vistas.velocidad import Velocidad, dias_del_episodio, saltar_al_dia_siguien
 
 MASCARA_SOMBRA = 0b0001  # cámara de la luz del sol (ver ursina.lights.DirectionalLight)
 AYUDA = ("clic der: girar   rueda: zoom   C: cámara automática   ESPACIO: pausa   flechas: velocidad   "
-         "N: día siguiente   ESC: salir")
+         "N: día siguiente   H: habitantes   ESC: salir")
 
 
 # ------------------------------------------------------------------ utilidades
@@ -70,8 +70,13 @@ def abrir_ventana(titulo: str, cfg: dict):
 
 
 def poner_texto(texto_ursina, contenido: str) -> bool:
-    """Ursina rehace la geometría de las letras cada vez que se asigna .text: solo si cambió."""
-    if texto_ursina.text != contenido:
+    """Ursina rehace la geometría de las letras cada vez que se asigna .text: solo si cambió.
+
+    Se compara con `raw_text` (lo que se asignó) y no con `.text`: ese lo reconstruye
+    letra por letra en cada llamada y SIN las etiquetas de color, así que con colores
+    nunca era igual y los paneles se rehacían en cada cuadro.
+    """
+    if getattr(texto_ursina, "raw_text", None) != contenido:
         texto_ursina.text = contenido
         return True
     return False
@@ -205,6 +210,94 @@ class Panel:
         for e in (self.fondo, self.texto, self.titulo):
             if e is not None:
                 e.enabled = valor
+
+
+# ------------------------------------------------------- detalle de un habitante
+def barra(fraccion: float, ancho: int, hex_lleno: str, hex_vacio: str) -> str:
+    """Barra hecha de texto: la fuente no trae bloques, pero "|" seguidos se leen como barra."""
+    llenos = round(max(0.0, min(1.0, fraccion)) * ancho)
+    return f"{etiqueta(hex_lleno)}{'|' * llenos}{etiqueta(hex_vacio)}{'|' * (ancho - llenos)}"
+
+
+def color_hambre(cfg: dict, hambre: float, umbral: float) -> tuple:
+    """Verde (saciado) -> ámbar (al llegar al umbral) -> rojo (hambre máxima)."""
+    c = {k: hex_a_color(v) for k, v in cfg["colores"]["hambre"].items()}
+    if hambre <= umbral:
+        return mezclar(c["saciado"], c["medio"], hambre / umbral)
+    return mezclar(c["medio"], c["hambre"], (hambre - umbral) / max(1.0, 100 - umbral))
+
+
+class PanelHabitante:
+    """Panel con lo que piensa el habitante al que se le dio clic.
+
+    Por qué un panel y no un letrero sobre su casa: son una docena de líneas (cómo está,
+    qué comparó, qué escogió, qué aprendió); en 3D taparía media ciudad.
+    """
+
+    def __init__(self, cfg: dict, margen_y: float):
+        self.cfg = cfg
+        self.panel = Panel(cfg["hud"], "arriba_der", escala=0.78, margen=(0.02, margen_y), titulo="",
+                           escala_titulo=1.25)
+        self.panel.habilitado = False
+        self.vista = None
+        self.habitante = None
+
+    def seleccionar(self, vista, habitante) -> None:
+        """Clic en un ícono: lo abre; clic otra vez en el mismo: lo cierra."""
+        if self.habitante is habitante:
+            self.cerrar()
+            return
+        self.vista, self.habitante = vista, habitante
+        self.panel.habilitado = True
+
+    def cerrar(self) -> None:
+        self.vista = self.habitante = None
+        self.panel.habilitado = False
+
+    def actualizar(self) -> None:
+        if self.habitante is None:
+            return
+        from vistas import detalle_habitante as d
+        h, cfg = self.habitante, self.cfg
+        hud, ch = cfg["hud"], cfg["habitantes"]
+        s, t, a = etiqueta(hud["suave"]), etiqueta(hud["texto"]), etiqueta(hud["acento"])
+        umbral = h.cfg["umbral_hambre"]
+        frase, clave = d.estado(h)
+        tinte_hambre = "#{:02x}{:02x}{:02x}".format(*(int(x * 255) for x in color_hambre(cfg, h.hambre, umbral)[:3]))
+        lineas = [
+            f"{etiqueta(cfg['colores']['estado_habitante'][clave])}{frase}",
+            f"{s}Ahora está {d.describir_actividad(h)}",
+            "",
+            f"{s}Hambre   {barra(h.hambre / 100, ch['ancho_barra'], tinte_hambre, '#3a404c')}  "
+            f"{t}{h.hambre:.0f}{s} / 100  (busca comida desde {umbral})",
+            f"{s}Energía  {barra(h.energia / 100, ch['ancho_barra'], '#7fc8ff', '#3a404c')}  "
+            f"{t}{h.energia:.0f}{s} / 100",
+            f"{s}Plata    {t}${h.dinero / 1000:.1f}k",
+            "",
+            f"{s}Última decisión {d.frase_decision(h.ultima_decision, a)}",
+        ]
+        # Corto a propósito: lo que comparó, lo que espera de cada restaurante y lo de hoy.
+        if h.ultima_decision and h.ultima_decision["opciones"]:
+            lineas.append(self._opciones(h.ultima_decision["opciones"], "  "))
+        aprendido = d.lo_que_aprendio(h)
+        if aprendido:
+            favorito = max(aprendido, key=lambda x: x[1])[0]
+            lineas.append(f"{s}Espera de cada restaurante: " + "  ".join(
+                f"{a if n == favorito else t}{n} {v:+.1f}" for n, v, _ in aprendido))
+        lineas.append(f"{s}Hoy: {t}{'   '.join(d.comidas_de_hoy(self.vista.modelo, h)) or 'nada todavía'}")
+        titulo = f"{a}Habitante {h.unique_id}{s}  ·  {h.tipo}"
+        if self.vista.titulo:
+            titulo += f"  ·  {etiqueta(self.vista.color_titulo)}{self.vista.titulo.split(':')[0]}"
+        self.panel.poner("\n".join(lineas), titulo=titulo)
+
+    def _opciones(self, opciones: dict, prefijo: str) -> str:
+        """Las utilidades en fila; la que gana, resaltada."""
+        from vistas.detalle_habitante import NOMBRE_CORTO
+        hud = self.cfg["hud"]
+        mejor = max(opciones, key=opciones.get)
+        partes = [f"{etiqueta(hud['acento'] if k == mejor else hud['texto'])}{NOMBRE_CORTO[k]} {v:+.1f}"
+                  for k, v in opciones.items()]
+        return f"{etiqueta(hud['suave'])}{prefijo}" + "   ".join(partes)
 
 
 # ------------------------------------------------------------- cielo, sol y clima
@@ -361,6 +454,9 @@ class Vista3D:
         self.cfg_avisos = modelo.cfg["vistas"]["avisos"]
         self.avisos: dict = {}  # clave -> [letrero, momento en que nació, veces]
         self.ambiente: Ambiente | None = None
+        self.iconos_habitante: dict[int, dict] = {}
+        self.mostrar_habitantes = True
+        self.panel_habitante: PanelHabitante | None = None  # lo pone quien arma el HUD (una o dos ciudades)
 
     # ------------------------------------------------------------ coordenadas
     def mundo(self, x: float, y: float, altura: float = 0.0):
@@ -460,6 +556,7 @@ class Vista3D:
         self.panel_der = Panel(h, "arriba_der", escala=0.95)
         self.panel_leyenda = Panel(h, "abajo_izq", escala=0.8)
         self.panel_leyenda.poner(self.leyenda())
+        self.panel_habitante = PanelHabitante(self.cfg, self.cfg["habitantes"]["margen_panel"])
 
     def leyenda(self) -> str:
         h, r, p = self.cfg["hud"], self.cfg["colores"]["repartidor"], self.cfg["colores"]["pedido"]
@@ -469,6 +566,9 @@ class Vista3D:
                 f"{s}Pedidos:  {etiqueta(p['creado'])}creado   {etiqueta(p['en_preparacion'])}en cocina   "
                 f"{etiqueta(p['listo'])}listo   {etiqueta(p['en_camino'])}en camino   "
                 f"{etiqueta(p['urgente'])}a punto de cancelarse   {s}Rojo en la calle: trancón\n"
+                f"{s}Habitantes: el círculo es su hambre ({etiqueta(self.col_hex('hambre')['saciado'])}saciado"
+                f"{s} a {etiqueta(self.col_hex('hambre')['hambre'])}con hambre{s}); clic en uno para ver "
+                f"qué decide\n"
                 f"{s}{AYUDA}")
 
     # ---------------------------------------------------------------- entrada
@@ -476,10 +576,18 @@ class Vista3D:
         if tecla == "n":
             self.saltar_dia()
             return
+        if tecla == "h":
+            self.alternar_habitantes()
+            return
         tecla_comun(tecla, self.velocidad, self.alternar_pausa, self.ambiente.camara)
 
     def alternar_pausa(self) -> None:
         self.pausa = not self.pausa
+
+    def alternar_habitantes(self) -> None:
+        self.mostrar_habitantes = not self.mostrar_habitantes
+        if not self.mostrar_habitantes and self.panel_habitante is not None:
+            self.panel_habitante.cerrar()
 
     def saltar_dia(self) -> None:
         """Tecla N: a la mañana siguiente sin dibujar la noche."""
@@ -493,6 +601,7 @@ class Vista3D:
         estado = self.ambiente.actualizar(self.minuto_suave(), self.modelo.eventos.lloviendo, self.pausa)
         self.dibujar(self.velocidad.fraccion, estado, self.ambiente.lluvia)
         self._textos()
+        self.panel_habitante.actualizar()
 
     def minuto_suave(self) -> float:
         """El minuto del día con la fracción del siguiente: el sol se mueve sin saltos."""
@@ -521,6 +630,7 @@ class Vista3D:
         self._lluvia(lluvia)
         self._mover_avisos()
         self._iconos()
+        self._habitantes()
 
     def _luces(self, noche: float) -> None:
         """De día las ventanas son vidrio; de noche unas brillan y otras quedan oscuras."""
@@ -728,6 +838,82 @@ class Vista3D:
             aro.color = color_ursina(tinte)
             aro.scale = 1 + 0.15 * pulso
 
+    # ------------------------------------------------------------ habitantes
+    def _nuevo_icono_habitante(self, h) -> dict:
+        """Círculo con el hambre adentro y un aro con lo que está haciendo. Tiene colisionador
+        para poder darle clic (Ursina llama a on_click cuando el mouse lo toca)."""
+        from ursina import Entity, Text, color, scene
+        raiz = Entity(parent=scene, billboard=True, scale=self.cfg["habitantes"]["escala"])
+        aro = Entity(parent=raiz, model="quad", texture="circle", z=0.01, scale=1.3)
+        fondo = Entity(parent=raiz, model="quad", texture="circle", collider="box")
+        texto = Text(parent=raiz, text="", origin=(0, 0), scale=17, z=-0.01, color=color.hex("#15181f"))
+        for e in (aro, fondo):
+            e.setTransparency(True)
+        raiz.hide(MASCARA_SOMBRA)
+        fondo.on_click = lambda: self.panel_habitante and self.panel_habitante.seleccionar(self, h)
+        return {"raiz": raiz, "aro": aro, "fondo": fondo, "texto": texto, "habitante": h,
+                "aspecto": None, "escala": None}
+
+    def _habitantes(self) -> None:
+        """Un ícono por habitante sobre el edificio donde está ahora (su casa, la oficina o la
+        universidad). Si hay varios en el mismo edificio, van en filas, ordenados por número.
+
+        Por qué solo cuando cambia el minuto: lugar, hambre y estado cambian con la
+        simulación, no con cada cuadro; tocar 30 íconos (posición, color, texto) en cada
+        cuadro le quitaba un tercio de la velocidad a la demo. Lo único que se mira en
+        cada cuadro es el agrandado del que está bajo el mouse o seleccionado.
+        """
+        from ursina import mouse, time
+        visible = self.mostrar_habitantes
+        if visible != getattr(self, "_iconos_visibles", None):
+            self._iconos_visibles = visible
+            for icono in self.iconos_habitante.values():
+                icono["raiz"].enabled = visible
+            self._minuto_iconos = None
+        if not visible:
+            return
+        if self._minuto_iconos != self.modelo.reloj.tick:
+            self._minuto_iconos = self.modelo.reloj.tick
+            self._ubicar_iconos()
+        ch = self.cfg["habitantes"]
+        elegido = self.panel_habitante.habitante if self.panel_habitante else None
+        for icono in self.iconos_habitante.values():
+            seleccionado = icono["habitante"] is elegido
+            grande = seleccionado or mouse.hovered_entity is icono["fondo"]
+            pulso = 1 + 0.08 * math.sin(time.time() * 6) if seleccionado else 1
+            escala = ch["escala"] * (ch["agrandar"] if grande else 1) * pulso
+            if escala != icono["escala"]:
+                icono["escala"] = escala
+                icono["raiz"].scale = escala
+
+    def _ubicar_iconos(self) -> None:
+        from ursina import Vec3
+        from vistas.detalle_habitante import estado
+        ch = self.cfg["habitantes"]
+        por_lugar: dict[tuple, list] = {}
+        for h in sorted(self.modelo.habitantes, key=lambda x: x.unique_id):
+            por_lugar.setdefault(h.ubicacion, []).append(h)
+        for lugar, gente in por_lugar.items():
+            base = self._sobre_destino(lugar, ch["altura"])
+            filas = (len(gente) + ch["por_fila"] - 1) // ch["por_fila"]
+            for i, h in enumerate(gente):
+                icono = self.iconos_habitante.get(h.unique_id)
+                if icono is None:
+                    icono = self.iconos_habitante[h.unique_id] = self._nuevo_icono_habitante(h)
+                fila, columna = divmod(i, ch["por_fila"])
+                en_fila = min(ch["por_fila"], len(gente) - fila * ch["por_fila"])
+                posicion = (base.x + (columna - (en_fila - 1) / 2) * ch["espacio"],
+                            base.y + (filas - 1 - fila) * ch["espacio"], base.z)
+                _, clave = estado(h)
+                aspecto = (posicion, round(h.hambre), clave)
+                if aspecto == icono["aspecto"]:
+                    continue  # nada que se vea cambió: no se toca la Entity
+                icono["aspecto"] = aspecto
+                icono["raiz"].position = Vec3(*posicion)
+                icono["fondo"].color = color_ursina(color_hambre(self.cfg, h.hambre, h.cfg["umbral_hambre"]))
+                icono["aro"].color = color_ursina(self.col["estado_habitante"][clave])
+                poner_texto(icono["texto"], "z" if clave == "durmiendo" else f"{h.hambre:.0f}")
+
     def _sobre_destino(self, nodo: tuple, altura: float):
         """Encima del edificio del cliente (no en la esquina): ahí vive quien pidió."""
         from ursina import Vec3
@@ -845,6 +1031,9 @@ class VistaDuelo3D:
         self.panel_centro = Panel(h, "arriba", escala=0.95, titulo="", escala_titulo=2.2)
         self.panel_leyenda = Panel(h, "abajo_izq", escala=0.8)
         self.panel_leyenda.poner(self.der.leyenda() + "   M: marcador")
+        # Un solo panel para las dos ciudades: el mismo habitante existe en ambas (mismas semillas)
+        self.panel_habitante = PanelHabitante(self.cfg3d, self.cfg3d["habitantes"]["margen_panel_duelo"])
+        self.izq.panel_habitante = self.der.panel_habitante = self.panel_habitante
         # Marcador final: fuente monoespaciada para que las columnas queden alineadas, sobre
         # un panel oscuro casi opaco para que la ciudad de atrás no estorbe al leer.
         self.fondo_marcador = Entity(parent=camera.ui, model="quad", color=color.rgba(0.06, 0.07, 0.1, 0.94),
@@ -862,6 +1051,10 @@ class VistaDuelo3D:
             self.izq.saltar_dia()
             self.der.saltar_dia()
             return
+        if tecla == "h":
+            self.izq.alternar_habitantes()
+            self.der.alternar_habitantes()
+            return
         tecla_comun(tecla, self.velocidad, self.alternar_pausa, self.ambiente.camara)
 
     def alternar_pausa(self) -> None:
@@ -877,6 +1070,7 @@ class VistaDuelo3D:
         estado = self.ambiente.actualizar(self.der.minuto_suave(), m_der.eventos.lloviendo, self.pausa)
         for vista in (self.izq, self.der):
             vista.dibujar(self.velocidad.fraccion, estado, self.ambiente.lluvia)
+        self.panel_habitante.actualizar()
         h = self.cfg3d["hud"]
         self.panel_izq.poner(self.izq.resumen(), titulo=f"{etiqueta(self.cfg['color_antes'])}{self.titulos[0]}")
         self.panel_der.poner(self.der.resumen(), titulo=f"{etiqueta(self.cfg['color_despues'])}{self.titulos[1]}")

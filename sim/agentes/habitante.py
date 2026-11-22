@@ -57,6 +57,9 @@ class Habitante(AgenteBase):
         self.comida_en_curso: str | None = None  # "cocinar" | "salir"
         self.ocupado_hasta: int | None = None
         self.ultima_satisfaccion: float | None = None
+        # La última vez que comparó opciones: qué valía cada una y qué escogió. Solo se
+        # guarda para explicarla (la vista 3D la muestra); no cambia ninguna decisión.
+        self.ultima_decision: dict | None = None
 
     # -------------------------------------------------------------- estado
     @property
@@ -90,12 +93,23 @@ class Habitante(AgenteBase):
             return {"tipo": "nada"}
 
         opciones = self.opciones_comida(percepcion)
+        decision = {"tick": self.t, "minuto_del_dia": self.model.reloj.minuto_del_dia,
+                    "hambre": percepcion["hambre"], "lluvia": percepcion["lluvia"],
+                    "opciones": dict(opciones), "eleccion": None, "restaurante": None, "exploro": False}
+        self.ultima_decision = decision
         if not opciones:
             return {"tipo": "nada"}  # sin plata ni energía: aguanta hambre
         mejor = max(opciones, key=opciones.get)
+        decision["eleccion"] = mejor
         if mejor != "pedir":
             return {"tipo": mejor}
         eleccion = self.politica.elegir(percepcion)
+        decision["restaurante"] = eleccion["nombre"]
+        # ¿Fue al que más le ha gustado o probó otro (exploración del bandit)?
+        valores = getattr(self.politica, "q", None)
+        if valores:
+            favorito = max(percepcion["restaurantes_asequibles"], key=valores.get)
+            decision["exploro"] = valores[eleccion["nombre"]] < valores[favorito]
         return {"tipo": "pedir", "nombre": eleccion["nombre"]}
 
     def opciones_comida(self, percepcion: dict) -> dict[str, float]:
