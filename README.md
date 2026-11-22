@@ -50,8 +50,14 @@ una entrega de ~30 min se ve en ~15 s. `↑/↓` recorren 0.5, 1, 2, 4, 8, 15, 3
 por segundo real y no por cuadro, así que se ve igual en cualquier computador (`vistas/velocidad.py`).
 
 Controles de la vista 2D: `ESPACIO` pausa, `↑/↓` velocidad, `D` un minuto, `ESC` salir.
-Duelos: `ESPACIO` pausa, `↑/↓` velocidad, `M` marcador, `ESC` salir (en 3D, además, clic derecho gira y la rueda hace zoom).
-Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zoom, `ESPACIO` pausa, `↑/↓` velocidad.
+Duelos: `ESPACIO` pausa, `↑/↓` velocidad, `M` marcador, `ESC` salir (en 3D, además, clic derecho gira, la rueda hace zoom y `C` gira la cámara sola).
+Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zoom, `C` cámara automática, `ESPACIO` pausa, `↑/↓` velocidad.
+
+La vista 3D es una maqueta low poly que vive el día completo: el cielo, el sol y las sombras siguen el reloj
+simulado (amanecer, atardecer, noche con estrellas), de noche se prenden ventanas y faroles, la lluvia nubla
+el cielo poco a poco y las calles trancadas se llenan de carros. La caja de cada moto tiene el color de su
+estado y cada pedido es un alfiler sobre la casa del cliente. Colores, horas y cantidades: `vista_3d` en
+`config/base.yaml`; si tu pantalla la ve oscura, sube `vista_3d.exposicion`.
 
 ## Estructura
 
@@ -64,6 +70,7 @@ Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zo
 | `sim/politicas/` | Políticas intercambiables: aleatoria, cercano, urgente, Q-learning, DQN (PyTorch), ε-greedy. |
 | `sim/entorno_gym.py` | La ciudad como entorno Gymnasium (`Domicilios-v0`). |
 | `vistas/` | Vista 2D (Pygame), 3D (Ursina) y duelo antes/después. Solo leen el modelo. |
+| `vistas/maqueta_3d.py`, `geometria.py`, `ciclo_dia.py`, `sombreado.py` | La maqueta 3D (geometría en Python puro, probada sin ventana), los colores según la hora y los shaders GLSL. |
 | `experimentos/` | Correr experimentos en paralelo, prueba final, predictor supervisado, DQN en Gymnasium y gráficas. |
 | `tests/` | pytest: reglas del entorno, ciclo del pedido, políticas, red, Gymnasium y reproducibilidad. |
 

@@ -240,6 +240,117 @@ vista_duelo_3d:               # python main.py --vista duelo3d
   encuadre: 1.12              # ancho visible = ancho de las dos ciudades × esto (más = más lejos; la rueda también)
   margen_marcador: 0.08       # borde vertical del panel del marcador final (unidades de pantalla de Ursina)
   ancho_marcador: 0.86        # fracción del ancho de la ventana que ocupa el panel del marcador
+  color_antes: "#6ea0f0"      # azul = sin entrenar, ámbar = entrenada (los mismos de la vista duelo 2D)
+  color_despues: "#f0b428"
 
-vista_3d:
-  encuadre: 2.3               # ancho visible = ancho de la ciudad × esto (la cámara va girada: necesita más margen)
+vista_3d:                     # python main.py --vista 3d / duelo3d (vistas/vista_3d.py y vistas/maqueta_3d.py)
+  encuadre: 1.75              # ancho visible = ancho de la ciudad × esto (más = más lejos; la rueda también)
+  camara: {inclinacion: 44, giro: 24, giro_auto: 6}   # grados; giro_auto: grados/s con la tecla C
+  semilla_decorado: 11        # árboles, colores de las casas, nubes: solo adorno, no toca el azar del modelo
+  antialiasing: 4             # muestras MSAA (0 = sin suavizado de bordes)
+  sombras: {resolucion: 4096, sesgo: 0.0015}
+  exposicion: 1.0             # multiplica toda la luz (sol y ambiente): sube si tu pantalla se ve oscura
+  niebla: {inicio: 1.6, fin: 4.5, intensidad: 0.85}   # distancias × lado de la ciudad, desde la cámara
+  borde: 1.3                  # cuadras de pasto alrededor de la ciudad (la maqueta)
+  densidad_bosque: 0.32       # árboles por unidad² en ese borde
+  prob_parque: 0.85           # cuadrantes libres que son parque (el resto, plaza con flores)
+  arboles_por_parque: [1, 4]
+  pisos_oficina: [6, 13]
+  ventanas_encendidas: 0.6    # fracción de ventanas que se prenden de noche
+  faroles_cada: 2             # un farol cada tantas intersecciones
+  radio_halo: 0.6             # charco de luz de cada farol
+  escala_moto: 1.5            # las motos van exageradas: a escala real no se verían
+  suavizado_giro: 10          # qué tan rápido gira la moto hacia su rumbo (1/s)
+  pin: {altura: 1.1, rebote: 0.12, escala: 1.15, giro: 60}   # giro en grados/s
+  icono: {altura: 1.25, escala: 1.1, giro: 45, letrero: 22}     # ícono 3D que gira sobre cada restaurante
+  nubes: {cantidad: 8, altura: [4, 8], distancia: [1.5, 2.1], arco: [-15, 195], escala: [0.9, 1.6], velocidad: 0.35, gris_lluvia: 0.3}
+  fondo_bajo: 0.35            # debajo del horizonte: mezcla horizonte→cenit (la maqueta flota en el cielo)
+  lluvia: {gotas: 900, alto: 9, velocidad: 14, transicion: 0.5, opacidad: 0.55}   # transicion: fracción por segundo real
+  cielo:
+    sol: {salida: 6, puesta: 18.5, elevacion_maxima: 68, inclinacion_sur: 0.9, elevacion_fundido: 5,
+          elevacion_minima_sombra: 16}
+    luna: {direccion: [-0.45, 0.8, -0.55]}
+    lluvia: {tinte: "#e3e9f2", oscurecer: 0.78, desaturar: 0.85, factor_sol: 0.3, luces_extra: 0.35}
+    # Fotogramas clave del día. cenit/horizonte: cielo; sol: color de la luz (de noche, la luna);
+    # cielo/suelo: luz ambiente que llega de arriba/de abajo; noche: 0-1, prende ventanas y faroles.
+    ciclo_dia:
+      - {hora: 0,    cenit: "#060a1c", horizonte: "#18203d", sol: "#7086c4", intensidad: 0.32, cielo: "#1e2849", suelo: "#0b0d17", noche: 1}
+      - {hora: 4.8,  cenit: "#0a1130", horizonte: "#262b52", sol: "#7086c4", intensidad: 0.3,  cielo: "#222a4d", suelo: "#0e1020", noche: 1}
+      - {hora: 6,    cenit: "#3b5689", horizonte: "#f5a46b", sol: "#ffb27c", intensidad: 0.68, cielo: "#4a557a", suelo: "#2c282c", noche: 0.45}
+      - {hora: 7.5,  cenit: "#4c8cd4", horizonte: "#cfe2f0", sol: "#ffe6c4", intensidad: 0.74, cielo: "#4f6177", suelo: "#30352c", noche: 0}
+      - {hora: 12,   cenit: "#3b82d6", horizonte: "#c2e1f6", sol: "#fff6e8", intensidad: 0.78, cielo: "#4d6076", suelo: "#33382d", noche: 0}
+      - {hora: 16.5, cenit: "#4886cf", horizonte: "#ead9b8", sol: "#ffe3b5", intensidad: 0.76, cielo: "#4f5f72", suelo: "#36332a", noche: 0}
+      - {hora: 18.2, cenit: "#3f5590", horizonte: "#ff8a57", sol: "#ff9a5e", intensidad: 0.68, cielo: "#4a4c6e", suelo: "#2e2528", noche: 0.35}
+      - {hora: 19.4, cenit: "#1b2250", horizonte: "#6b4a7a", sol: "#8a80d0", intensidad: 0.4,  cielo: "#30386a", suelo: "#14141e", noche: 0.9}
+      - {hora: 20.6, cenit: "#080c22", horizonte: "#1a2242", sol: "#7086c4", intensidad: 0.32, cielo: "#1e2849", suelo: "#0b0d17", noche: 1}
+  hud:
+    fondo: "#10131a"
+    opacidad: 0.8
+    texto: "#e8ebf0"
+    suave: "#9aa3b2"
+    acento: "#ffb347"
+    relleno: 0.018              # margen interno de los paneles (unidades de pantalla)
+    radio: 0.012                # esquinas redondeadas
+  colores:
+    pasto: "#86b85c"
+    pasto_oscuro: "#5e8f45"
+    pasto_manzana: "#93c266"
+    tierra: "#8c5d3c"
+    tierra_oscura: "#6e472e"
+    asfalto: "#454a55"
+    anden: "#d6d0c4"
+    bordillo: "#a9a397"
+    raya: "#f4cf5e"
+    cebra: "#f2f2ee"
+    lote: "#cfc8b8"
+    plaza: "#e0d6c0"
+    casas: ["#f2d7b6", "#e9b9a0", "#f5e6c8", "#c9dbc0", "#bfd3e6", "#f0c9cf", "#e8d39a", "#d9c2e3"]
+    techos: ["#b5533c", "#9c4632", "#7a4a3a", "#5d6b7a", "#8a5a44", "#c26b45"]
+    oficinas: ["#9fb3c8", "#b8c2cc", "#8ea3a8", "#c9c1b5", "#7f93ad"]
+    recepcion: "#33465c"
+    maquinas: "#8d939c"
+    universidad: "#efe4cc"
+    techo_universidad: "#6c4a8c"
+    reloj: "#fff1c9"
+    bandera: "#9a74c4"
+    fachada_restaurante: "#f6eedd"
+    vitrina: "#ffe6ad"
+    puerta: "#6b4a35"
+    ladrillo: "#a2563f"
+    tonos_ventana: ["#ffffff", "#fff3dc", "#eef4ff", "#ffe9c2"]
+    tronco: "#7a5236"
+    copas: ["#4f9a46", "#3f8a3c", "#6aad4c", "#2f7a45", "#7fb84f"]
+    flores: ["#e85d75", "#f2b33d", "#b06ad9", "#f07b3f"]
+    poste: "#3c4049"
+    carros: ["#d9534f", "#f0ad4e", "#5bc0de", "#f7f7f7", "#3d3d46", "#6c8ebf", "#8fbf6c"]
+    vidrio_carro: "#2b3a4d"
+    trancon: "#c9302c"
+    moto: "#d64538"
+    chaqueta: "#2c3340"
+    pantalon: "#3b4252"
+    casco: "#f2f2f2"
+    visera: "#1b2230"
+    llanta: "#1d1f24"
+    rin: "#9aa0a8"
+    nube: "#ffffff"
+    gota: "#d4e2ff"
+    # ventanas: de día vidrio; de noche las que se prenden brillan cálidas y las otras quedan oscuras
+    vidrio_dia: "#6d8aa8"
+    ventana_noche: "#ffd27a"
+    ventana_apagada: "#232b3a"
+    foco_dia: "#d9d9d2"
+    foco_noche: "#ffd58a"
+    halo: "#ffcf80"
+    faro_moto: "#fff4cc"
+    restaurantes: {Pizza: "#e34948", Hamburguesas: "#eda100", Sushi: "#1baf7a"}
+    repartidor: {libre: "#e6e6e6", yendo_a_restaurante: "#ffd400", yendo_a_cliente: "#3fb6ff"}
+    pedido: {creado: "#c8c8c8", en_preparacion: "#eda100", listo: "#78dc78", en_camino: "#3fb6ff", urgente: "#ff3b3b"}
+    masa: "#e0a95b"
+    queso: "#ffd35c"
+    pepperoni: "#c0392b"
+    pan: "#d99a4e"
+    lechuga: "#6fbf4a"
+    carne: "#6b3a26"
+    alga: "#1f3a2c"
+    arroz: "#fafaf5"
+    salmon: "#ff8a5c"
