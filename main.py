@@ -3,10 +3,13 @@
     python main.py --vista ninguna --episodios 300 --semilla 42   # entrena sin ventana
     python main.py --vista 2d                                      # demo con Pygame
     python main.py --vista 3d                                      # demo con Ursina
+    python main.py --vista duelo                                   # antes vs después, lado a lado
+    python main.py --vista ninguna --politica dqn                  # entrena la red neuronal
 
 Con --vista ninguna se entrena la política del YAML y se guardan
-resultados/entrenamiento.csv y resultados/tabla_q.npz. Las vistas cargan esa
-tabla (si existe) para mostrar al repartidor ya entrenado.
+resultados/entrenamiento.csv y el modelo (resultados/tabla_q.npz para la tabla,
+resultados/red_dqn.pt para la red). Las vistas lo cargan (si existe) para
+mostrar al repartidor ya entrenado.
 """
 from __future__ import annotations
 
@@ -16,11 +19,15 @@ from pathlib import Path
 import pandas as pd
 
 from experimentos.correr import CARPETA_RESULTADOS, correr_corrida
-from sim.config import cargar_config
+from sim.config import cargar_config, fusionar
 from sim.model import CiudadModel
 from sim.politicas import crear_politica_repartidor
 
 TABLA_Q = CARPETA_RESULTADOS / "tabla_q.npz"
+RED_DQN = CARPETA_RESULTADOS / "red_dqn.pt"
+# Copias versionadas en git (resultados/ no se sube): las usan las demos si no hay un modelo entrenado local.
+CARPETA_MODELOS = Path(__file__).resolve().parent / "modelos"
+VERSIONADO = {".npz": CARPETA_MODELOS / "tabla_q_300dias.npz", ".pt": CARPETA_MODELOS / "red_dqn_300dias.pt"}
 
 
 def entrenar(config: dict, episodios: int, semilla: int, ruta_q: Path) -> None:
@@ -37,36 +44,61 @@ def entrenar(config: dict, episodios: int, semilla: int, ruta_q: Path) -> None:
     pd.DataFrame(filas).to_csv(CARPETA_RESULTADOS / "entrenamiento.csv", index=False)
     if hasattr(politica, "guardar"):
         politica.guardar(ruta_q)
-        print(f"Tabla Q guardada en {ruta_q}")
+        print(f"Modelo guardado en {ruta_q}")
 
 
 def crear_modelo_demo(config: dict, semilla: int, ruta_q: Path) -> CiudadModel:
     politica = crear_politica_repartidor(config["repartidores"])
     if hasattr(politica, "cargar"):
+        if not ruta_q.exists():
+            respaldo = VERSIONADO.get(getattr(politica, "extension", ".npz"))
+            if respaldo is not None and respaldo.exists():
+                ruta_q = respaldo  # entrenado 300 días, guardado en el repositorio
         if ruta_q.exists():
             politica.cargar(ruta_q)
             politica.explorar = False
-            print(f"Usando tabla Q entrenada: {ruta_q}")
+            print(f"Usando modelo entrenado: {ruta_q}")
         else:
-            print("Aviso: no hay tabla Q entrenada; el repartidor arranca sin saber nada. "
-                  "Corre primero: python main.py --vista ninguna")
+            print(f"Aviso: no existe {ruta_q}; el repartidor arranca sin saber nada. "
+                  f"Corre primero: python main.py --vista ninguna --politica {config['repartidores']['politica']}")
     return CiudadModel(config, semilla=semilla, politica_repartidor=politica)
+
+
+def crear_duelo(config: dict, semilla: int, entrenado: CiudadModel):
+    """(modelo antes, modelo después, título antes, título después) para la vista duelo.
+
+    El "antes" es la MISMA clase de política recién creada y sin explorar: así
+    lo único que cambia entre las dos ciudades es lo aprendido. Si la política
+    no aprende (una regla fija), no hay "antes": se compara con la aleatoria.
+    """
+    nombre = config["repartidores"]["politica"]
+    politica = crear_politica_repartidor(config["repartidores"])
+    if politica.aprende:
+        politica.explorar = False
+        antes = CiudadModel(config, semilla=semilla, politica_repartidor=politica)
+        titulo = f"ANTES: {nombre} sin entrenar"
+    else:
+        antes = CiudadModel(fusionar(config, {"repartidores": {"politica": "aleatoria"}}), semilla=semilla)
+        titulo = "ANTES: aleatoria"
+    return antes, entrenado, titulo, f"DESPUÉS: {nombre} entrenado"
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", default="config/base.yaml")
-    parser.add_argument("--vista", choices=["ninguna", "2d", "3d"], default="ninguna")
+    parser.add_argument("--vista", choices=["ninguna", "2d", "3d", "duelo"], default="ninguna")
     parser.add_argument("--episodios", type=int, default=300)
     parser.add_argument("--semilla", type=int, default=None)
     parser.add_argument("--politica", default=None, help="sobrescribe repartidores.politica del YAML")
-    parser.add_argument("--tabla-q", default=str(TABLA_Q))
+    parser.add_argument("--tabla-q", default=None,
+                        help="modelo a guardar/cargar (por defecto tabla_q.npz o red_dqn.pt según la política)")
     args = parser.parse_args()
 
     cambios = {"repartidores": {"politica": args.politica}} if args.politica else {}
     config = cargar_config(args.config, cambios)
     semilla = config["semilla"] if args.semilla is None else args.semilla
-    ruta_q = Path(args.tabla_q)
+    ruta_q = Path(args.tabla_q) if args.tabla_q else (
+        RED_DQN if config["repartidores"]["politica"] == "dqn" else TABLA_Q)
 
     if args.vista == "ninguna":
         config["metricas"]["recolectar_cada"] = 0
@@ -74,7 +106,10 @@ def main():
         return
 
     modelo = crear_modelo_demo(config, semilla, ruta_q)
-    if args.vista == "2d":
+    if args.vista == "duelo":
+        from vistas.vista_duelo import VistaDuelo
+        VistaDuelo(*crear_duelo(config, semilla, modelo)).correr()
+    elif args.vista == "2d":
         from vistas.vista_2d import Vista2D
         Vista2D(modelo).correr()
     else:

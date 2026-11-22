@@ -54,6 +54,18 @@ class Repartidor(AgenteBase):
         self._cerrar_acciones_terminadas()
         super().step()
 
+    def necesita_decision(self) -> bool:
+        """¿En su próximo step la política tendrá que escoger? (lo usa el entorno Gymnasium).
+
+        Cierra primero lo que ya terminó, igual que step(): así la recompensa
+        de la acción anterior ya está contada cuando se pide la siguiente.
+        Llamarlo antes de step() no cambia nada, porque cerrar dos veces no
+        hace nada la segunda vez.
+        """
+        self._cerrar_acciones_terminadas()
+        return (self.estado == EstadoRepartidor.LIBRE and self._espera_hasta is None
+                and bool(self.model.pedidos_disponibles()))
+
     def percibir(self) -> dict:
         """Solo ve pedidos sin repartidor, su distancia en cuadras al
         restaurante, el pago ofrecido, la hora y si llueve. No ve pedidos

@@ -87,13 +87,21 @@ def _trabajo(args):
     inicio = time.time()
     filas, comidas, politica = correr_corrida(config, semilla, n_ent, n_eval,
                                               guardar_comidas=guardar_comidas)
+    historial = getattr(politica, "historial_perdida", None)  # solo la red: pérdida por episodio
     for fila in filas:
         fila["variante"] = variante
+        if historial and fila["fase"] == "entrenamiento":
+            fila["perdida_red"] = historial[fila["episodio"]]
     for comida in comidas:
         comida["variante"] = variante
     if hasattr(politica, "guardar"):
-        politica.guardar(CARPETA_RESULTADOS / f"{nombre_exp}_{variante}_s{semilla}_q.npz")
+        politica.guardar(ruta_modelo(nombre_exp, variante, semilla, politica))
     return variante, semilla, filas, comidas, time.time() - inicio
+
+
+def ruta_modelo(nombre_exp: str, variante: str, semilla: int, politica) -> Path:
+    """Tabla Q -> .npz; red neuronal -> .pt (cada política declara su extensión)."""
+    return CARPETA_RESULTADOS / f"{nombre_exp}_{variante}_s{semilla}_q{getattr(politica, 'extension', '.npz')}"
 
 
 def correr_experimento(ruta_yaml: str | Path, procesos: int | None = None) -> pd.DataFrame:

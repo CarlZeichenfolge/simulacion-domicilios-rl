@@ -19,7 +19,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
 
-from experimentos.correr import CARPETA_RESULTADOS, RAIZ, correr_corrida
+from experimentos.correr import CARPETA_RESULTADOS, RAIZ, correr_corrida, ruta_modelo
 from sim.config import cargar_config, fusionar, leer_yaml
 from sim.politicas import crear_politica_repartidor
 
@@ -27,15 +27,11 @@ YAML_POR_DEFECTO = RAIZ / "config" / "experimentos" / "01_politicas.yaml"
 COLUMNAS = ["tasa_cancelacion", "tiempo_entrega_promedio", "recompensa_total", "satisfaccion_promedio"]
 
 
-def ruta_tabla(nombre_exp: str, variante: str, semilla: int):
-    return CARPETA_RESULTADOS / f"{nombre_exp}_{variante}_s{semilla}_q.npz"
-
-
 def _trabajo(args):
     nombre_exp, variante, config, semilla, dias = args
     politica = crear_politica_repartidor(config["repartidores"])
     if politica.aprende:
-        tabla = ruta_tabla(nombre_exp, variante, semilla)
+        tabla = ruta_modelo(nombre_exp, variante, semilla, politica)
         if not tabla.exists():
             raise FileNotFoundError(f"Falta {tabla}: corre antes el experimento 1")
         politica.cargar(tabla)

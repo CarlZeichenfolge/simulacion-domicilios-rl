@@ -151,6 +151,33 @@ repartidores:
     cortes_distancia: [3, 6, 10]        # cuadras de mí al restaurante
     cortes_entrega: [4, 8]              # cuadras del restaurante al cliente
     cortes_edad: [15, 30, 45]           # minutos que lleva esperando el pedido
+  dqn:                        # Deep Q-Network (PyTorch): la tabla Q reemplazada por una red
+    capas_ocultas: [64, 64]   # 12 entradas -> 64 -> 64 -> 1 valor Q por (situación, pedido)
+    tasa_aprendizaje: 0.001   # Adam; el punto de partida que recomienda el curso (RN-01)
+    gamma: 0.97               # igual que la tabla, para que la comparación sea justa
+    epsilon_inicial: 1.0
+    epsilon_min: 0.05
+    decaimiento_epsilon: 0.99
+    memoria: 50000            # experience replay: transiciones guardadas para reentrenar
+    lote: 64                  # minilote por paso de gradiente
+    minimo_para_entrenar: 1000   # no entrena hasta tener experiencias variadas
+    entrenar_cada: 2          # un paso de gradiente cada 2 decisiones
+    actualizar_objetivo_cada: 500 # pasos de gradiente entre copias a la red objetivo
+    max_norma_gradiente: 10.0 # recorte del gradiente: evita saltos que hacen divergir la red
+    semilla: 0                # pesos iniciales y muestreo de la memoria (reproducible)
+    escalas:                  # dividir por esto deja las entradas cerca de [0, 1] (Frente 7)
+      cuadras: 20
+      minutos: 60
+      pago: 10000
+      pedidos: 10
+
+gym:                          # entorno Gymnasium (sim/entorno_gym.py)
+  max_pedidos: 8              # casillas de la observación; si hay más, se ven los 8 más viejos
+  politica_otros: urgente     # los demás repartidores siguen una regla fija (no aprenden)
+  limite_observacion: 10.0    # cota superior de la caja de observación (las entradas quedan ~[0, 1])
+  dias_entrenamiento: 300     # experimentos/gym_dqn.py: mismo presupuesto que la tabla y la red
+  dias_prueba: 30
+  semilla: 1
 
 metricas:
   recolectar_cada: 10         # ticks entre muestras del DataCollector (0 = no recolectar)
@@ -182,3 +209,11 @@ vista_2d:
   alto: 760
   ticks_por_cuadro: 2
   fps: 30
+
+vista_duelo:                  # python main.py --vista duelo (antes vs después, lado a lado)
+  ancho: 1500
+  alto: 900
+  lado_mapa: 560
+  ticks_por_cuadro: 4
+  fps: 30
+  muestrear_cada: 10          # minutos entre puntos de las curvas en vivo

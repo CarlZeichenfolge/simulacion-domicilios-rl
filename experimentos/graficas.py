@@ -33,8 +33,10 @@ GRILLA, EJE, SUPERFICIE = "#e1e0d9", "#c3c2b7", "#fcfcfb"
 
 COLOR = {  # el color sigue a la entidad, no a su posición en la gráfica
     "aleatoria": SERIES[0], "cercano": SERIES[1], "urgente": SERIES[2],
-    "qlearning": SERIES[3], "qlearning_sin_rechazo": SERIES[4],
+    "qlearning": SERIES[3], "qlearning_sin_rechazo": SERIES[4], "dqn": SERIES[6],
     "Pizza": SERIES[0], "Hamburguesas": SERIES[1], "Sushi": SERIES[2],
+    # Agentes del entorno Gymnasium: mismo color que su equivalente en la simulación.
+    "aleatorio": SERIES[0],
 }
 
 ETIQUETAS = {
@@ -68,16 +70,17 @@ def _guardar(fig, nombre: str) -> None:
     print(f"  {ruta.relative_to(RAIZ)}")
 
 
-def _por_semilla(df: pd.DataFrame, columnas: list[str]) -> pd.DataFrame:
-    """Promedio de los episodios de evaluación de cada (variante, semilla)."""
-    evaluacion = df[df["fase"] == "evaluacion"].copy()
+def _por_semilla(df: pd.DataFrame, columnas: list[str], fase: str = "evaluacion") -> pd.DataFrame:
+    """Promedio de los episodios de evaluación (o de prueba) de cada (variante, semilla)."""
+    evaluacion = df[df["fase"] == fase].copy()
     evaluacion["ganancia_neta_por_repartidor"] /= 1000
     return evaluacion.groupby(["variante", "semilla_corrida"])[columnas].mean().reset_index()
 
 
-def barras(df: pd.DataFrame, nombre: str, metricas: list[str], orden: list[str], titulo: str) -> None:
+def barras(df: pd.DataFrame, nombre: str, metricas: list[str], orden: list[str], titulo: str,
+           fase: str = "evaluacion") -> None:
     """Paneles pequeños: una métrica por panel, una barra por variante, error = std entre semillas."""
-    datos = _por_semilla(df, metricas)
+    datos = _por_semilla(df, metricas, fase)
     orden = [v for v in orden if v in set(datos["variante"])]
     resumen = datos.groupby("variante")[metricas].agg(["mean", "std"]).loc[orden]
     fig, ejes = plt.subplots(1, len(metricas), figsize=(3.3 * len(metricas), 3.6))
@@ -88,7 +91,7 @@ def barras(df: pd.DataFrame, nombre: str, metricas: list[str], orden: list[str],
         eje.bar(x, medias, width=0.7, color=colores, edgecolor=SUPERFICIE, linewidth=2,
                 yerr=desv, error_kw={"ecolor": TINTA_2, "elinewidth": 1, "capsize": 3})
         for xi, m, d in zip(x, medias, desv):
-            texto = f"{m:.0%}" if metrica == "tasa_cancelacion" else f"{m:.1f}"
+            texto = f"{m:.1%}" if metrica == "tasa_cancelacion" else f"{m:.1f}"
             arriba = m >= 0
             eje.annotate(texto, (xi, m + d if arriba else m - d), xytext=(0, 3 if arriba else -3),
                          textcoords="offset points", ha="center", va="bottom" if arriba else "top",
@@ -103,7 +106,8 @@ def barras(df: pd.DataFrame, nombre: str, metricas: list[str], orden: list[str],
     _guardar(fig, nombre)
 
 
-def curva_aprendizaje(df: pd.DataFrame, nombre: str, ventana: int = 20) -> None:
+def curva_aprendizaje(df: pd.DataFrame, nombre: str, ventana: int = 20,
+                      titulo: str = "Curva de aprendizaje del repartidor con Q-learning") -> None:
     """Media móvil por episodio, promedio entre semillas, banda = ±1 std entre semillas.
     Las heurísticas aparecen como líneas punteadas de referencia (su nivel en evaluación)."""
     entrenamiento = df[df["fase"] == "entrenamiento"]
@@ -129,7 +133,69 @@ def curva_aprendizaje(df: pd.DataFrame, nombre: str, ventana: int = 20) -> None:
         if metrica == "tasa_cancelacion":
             eje.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
     ejes[0].legend(fontsize=8, loc="lower right")
-    fig.suptitle("Curva de aprendizaje del repartidor con Q-learning", x=0.01, ha="left",
+    fig.suptitle(titulo, x=0.01, ha="left", fontsize=12, fontweight="bold")
+    fig.tight_layout()
+    _guardar(fig, nombre)
+
+
+def perdida_red(df: pd.DataFrame, nombre: str, ventana: int = 10) -> None:
+    """Pérdida de Huber por episodio de la red.
+
+    Ojo: en DQN la pérdida NO mide qué tan buena es la política (eso lo dice la
+    recompensa). Al inicio los valores Q son casi cero y los objetivos también,
+    así que el error es pequeño; a medida que la red aprende valores más grandes
+    el error absoluto crece y luego se queda estable. No llega a cero porque el
+    objetivo r + γ^k·max Q' cambia con cada copia de la red objetivo y la
+    recompensa es ruidosa (lluvia, propinas). Lo que se verifica aquí es que
+    NO DIVERJA (que no crezca sin control), el riesgo clásico de DQN."""
+    datos = df[(df["fase"] == "entrenamiento") & df.get("perdida_red", pd.Series(dtype=float)).notna()]
+    if datos.empty:
+        return
+    tabla = datos.pivot_table(index="episodio", columns="semilla_corrida", values="perdida_red")
+    suave = tabla.rolling(ventana, min_periods=1).mean()
+    media, desv = suave.mean(axis=1), suave.std(axis=1).fillna(0)
+    fig, eje = plt.subplots(figsize=(6.5, 3.6))
+    eje.fill_between(media.index, media - desv, media + desv, color=COLOR["dqn"], alpha=0.15, linewidth=0)
+    eje.plot(media.index, media, color=COLOR["dqn"])
+    eje.set_xlabel("Episodio (1 día simulado)")
+    eje.set_ylabel("Pérdida de Huber")
+    eje.set_title(f"Media de 5 semillas, media móvil {ventana}; banda = ±1 desviación", fontsize=9,
+                  color=TINTA_2, fontweight="normal")
+    fig.suptitle("La pérdida de la red no diverge: se estabiliza tras el arranque", x=0.01, ha="left",
+                 fontsize=12, fontweight="bold")
+    fig.tight_layout()
+    _guardar(fig, nombre)
+
+
+def gymnasium(nombre: str = "06_gymnasium", ventana: int = 20) -> None:
+    """Izquierda: la red entrenada SOLO con env.reset()/env.step(). Derecha: prueba vs otros agentes."""
+    ruta_ent, ruta_prueba = RESULTADOS / "gym_entrenamiento.csv", RESULTADOS / "gym_prueba.csv"
+    if not (ruta_ent.exists() and ruta_prueba.exists()):
+        print("  (no existe gym_entrenamiento.csv / gym_prueba.csv, se omite)")
+        return
+    ent, prueba = pd.read_csv(ruta_ent), pd.read_csv(ruta_prueba)
+    fig, (izq, der) = plt.subplots(1, 2, figsize=(11, 3.8), gridspec_kw={"width_ratios": [1.6, 1]})
+    suave = ent.set_index("dia")["recompensa_repartidor0"].rolling(ventana, min_periods=1).mean()
+    izq.plot(suave.index, suave, color=COLOR["dqn"], label="dqn (entrenando)")
+    resumen = prueba.groupby("agente")["recompensa_repartidor0"].agg(["mean", "std"])
+    for agente in ["aleatorio", "urgente"]:
+        izq.axhline(resumen.loc[agente, "mean"], color=COLOR[agente], linestyle="--", linewidth=1.2,
+                    label=f"{agente} (fijo)")
+    izq.set_xlabel("Día de entrenamiento")
+    izq.set_title(f"Recompensa del repartidor 0 (media móvil {ventana})", fontsize=10)
+    izq.legend(fontsize=8, loc="lower right")
+    orden = ["aleatorio", "urgente", "dqn"]
+    x = range(len(orden))
+    der.bar(x, resumen.loc[orden, "mean"], width=0.7, color=[COLOR[a] for a in orden],
+            edgecolor=SUPERFICIE, linewidth=2, yerr=resumen.loc[orden, "std"],
+            error_kw={"ecolor": TINTA_2, "elinewidth": 1, "capsize": 3})
+    for xi, a in zip(x, orden):
+        m, d = resumen.loc[a, "mean"], resumen.loc[a, "std"]
+        der.annotate(f"{m:.1f}", (xi, m + d), xytext=(0, 3), textcoords="offset points", ha="center",
+                     fontsize=8, color=TINTA_2)
+    der.set_xticks(list(x), orden, fontsize=9)
+    der.set_title("Prueba: 30 días nunca vistos (error = desv. entre días)", fontsize=10)
+    fig.suptitle("La red entrenada solo con la interfaz de Gymnasium (reset / step)", x=0.01, ha="left",
                  fontsize=12, fontweight="bold")
     fig.tight_layout()
     _guardar(fig, nombre)
@@ -207,14 +273,27 @@ def graficar(nombre: str) -> None:
         barras(df, nombre, ["satisfaccion_promedio", "tasa_cancelacion"], ["aprende", "no_aprende"],
                "Habitantes que aprenden vs. que no")
         preferencias(nombre)
+    elif nombre.startswith("05"):
+        ruta_prueba = RESULTADOS / f"{nombre}_prueba.csv"
+        if ruta_prueba.exists():  # la comparación final va con los días de PRUEBA, no de validación
+            barras(pd.read_csv(ruta_prueba), nombre, metricas, ["urgente", "qlearning", "dqn"],
+                   "Tabla Q vs. red neuronal (DQN): prueba final, 30 días nunca vistos, 5 semillas",
+                   fase="prueba")
+        curva_aprendizaje(df, f"{nombre}_aprendizaje",
+                          titulo="Curva de aprendizaje: tabla Q vs. red neuronal (mismo presupuesto)")
+        perdida_red(df, f"{nombre}_perdida")
 
 
 def main():
     estilo()
-    nombres = sys.argv[1:] or ["01_politicas", "02_cantidad_repartidores", "03_lluvia", "04_preferencias"]
+    nombres = sys.argv[1:] or ["01_politicas", "02_cantidad_repartidores", "03_lluvia", "04_preferencias",
+                               "05_dqn", "06_gymnasium"]
     for nombre in nombres:
         print(f"[{nombre}]")
-        graficar(nombre)
+        if nombre == "06_gymnasium":
+            gymnasium(nombre)
+        else:
+            graficar(nombre)
 
 
 if __name__ == "__main__":

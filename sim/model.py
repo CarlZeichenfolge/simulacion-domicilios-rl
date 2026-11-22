@@ -191,14 +191,34 @@ class CiudadModel(mesa.Model):
 
     # --------------------------------------------------------------------- paso
     def step(self) -> None:
+        for _ in self.minuto():
+            pass  # sin agente externo el minuto nunca se pausa
+
+    def minuto(self, externo=None):
+        """Un minuto de simulación escrito como generador.
+
+        Por qué generador: el entorno Gymnasium (sim/entorno_gym.py) necesita
+        que el modelo se DETENGA justo cuando el repartidor `externo` tiene que
+        decidir, le devuelva el control a quien llama a env.step(accion) y
+        luego siga desde ese mismo punto. Un generador hace exactamente eso
+        sin hilos. Con externo=None nunca se pausa y el resultado es idéntico
+        al de antes: shuffle() baraja con el mismo azar que shuffle_do().
+        """
         self.eventos.actualizar(self.reloj)
         if self.eventos.lloviendo:
             self.minutos_lluvia += 1
         self._revisar_cancelaciones()
         for clase in ORDEN_ACTIVACION:
             grupo = self.agents_by_type.get(clase)
-            if grupo:
+            if not grupo:
+                continue
+            if externo is None or clase is not Repartidor:
                 grupo.shuffle_do("step")
+                continue
+            for agente in grupo.shuffle():
+                if agente is externo and agente.necesita_decision():
+                    yield agente
+                agente.step()
         self.pedidos_activos = [p for p in self.pedidos_activos if not p.terminado]
         if self.recolectar_cada and self.reloj.tick % self.recolectar_cada == 0:
             self.datacollector.collect(self)

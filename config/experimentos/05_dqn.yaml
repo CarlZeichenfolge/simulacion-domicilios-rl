@@ -1,0 +1,15 @@
+# Experimento 5. ¿La red neuronal (DQN) aprende mejor que la tabla Q?
+# Mismo presupuesto para las dos (300 días de entrenamiento, mismas semillas, misma
+# recompensa y mismo gamma): lo único que cambia es CÓMO se guarda lo aprendido,
+# casillas en una tabla o una función continua en una red. urgente es la referencia fija.
+nombre: 05_dqn
+episodios_entrenamiento: 300
+episodios_evaluacion: 30     # validación
+episodios_prueba: 30         # prueba final (python -m experimentos.prueba_final config/experimentos/05_dqn.yaml)
+semillas: [1, 2, 3, 4, 5]
+comun:
+  metricas: {recolectar_cada: 0}
+variantes:
+  urgente:   {repartidores: {politica: urgente}}
+  qlearning: {repartidores: {politica: qlearning}}
+  dqn:       {repartidores: {politica: dqn}}

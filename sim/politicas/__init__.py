@@ -18,4 +18,8 @@ def crear_politica_repartidor(cfg_repartidores: dict) -> Politica:
         return PoliticaRepartidorUrgente()
     if nombre == "qlearning":
         return PoliticaRepartidorQLearning(cfg_repartidores["qlearning"])
+    if nombre == "dqn":
+        # Import tardío: PyTorch solo se carga si de verdad se usa la red.
+        from sim.politicas.repartidor_dqn import PoliticaRepartidorDQN
+        return PoliticaRepartidorDQN(cfg_repartidores["dqn"])
     raise ValueError(f"Política de repartidor desconocida: {nombre}")
