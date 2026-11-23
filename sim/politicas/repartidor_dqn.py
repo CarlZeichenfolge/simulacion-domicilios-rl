@@ -153,6 +153,9 @@ class PoliticaRepartidorDQN(Politica):
         accion["x"] = x[i]  # la fila exacta que se evaluó: es lo que se guarda en la memoria
         return accion
 
+    def valorar(self, percepcion: dict) -> list[float]:
+        return [float(v) for v in self.valores_q(self.caracteristicas(percepcion))]
+
     # ---------------------------------------------------------------- aprender
     def aprender(self, percepcion, accion, recompensa, nueva_percepcion, duracion=1):
         self.recordar(accion["x"], recompensa, duracion, self.caracteristicas(nueva_percepcion))

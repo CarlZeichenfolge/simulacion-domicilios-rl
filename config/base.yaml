@@ -272,8 +272,16 @@ vista_3d:                     # python main.py --vista 3d / duelo3d (vistas/vist
   comida_en_moto: {altura: 2.4, escala: 1.8, giro: 120, rebote: 0.12, frecuencia_rebote: 4}
   # Mini ícono de cada habitante sobre el edificio donde está (clic = ver sus decisiones; H los oculta).
   # altura sobre el techo, espacio entre íconos del mismo edificio, por_fila antes de saltar de fila.
-  habitantes: {escala: 0.5, altura: 0.55, espacio: 0.56, por_fila: 4, agrandar: 1.35, ancho_barra: 24,
-               margen_panel: 0.15, margen_panel_duelo: 0.25}
+  habitantes: {escala: 0.5, altura: 0.55, espacio: 0.56, por_fila: 4, agrandar: 1.35}
+  # Panel de detalle: clic en un habitante, una moto o un restaurante (otro clic en el mismo lo cierra).
+  # margen_panel: distancia desde arriba (queda debajo de la lista de repartidores); max_opciones: filas
+  # de la última decisión del repartidor; max_filas: pedidos por sección del restaurante; agrandar: la
+  # moto o el ícono al pasar el mouse o elegirlo; caja_moto: zona de clic (ancho, alto, largo) en
+  # unidades de la moto; ruta: la línea del camino que va a seguir el repartidor elegido;
+  # ancho_texto: letras por línea (las más largas se parten) para que el panel no tape la ciudad;
+  # max_pedidos: cuántos de sus últimos pedidos (entregados o cancelados) se listan.
+  detalle: {escala: 0.78, margen_panel: 0.15, margen_panel_duelo: 0.25, ancho_barra: 24, ancho_texto: 62, max_opciones: 5,
+            max_filas: 4, max_pedidos: 3, agrandar: 1.3, caja_moto: [1.0, 1.4, 1.4], ruta: {altura: 0.12, grosor: 5}}
   nubes: {cantidad: 8, altura: [4, 8], distancia: [1.5, 2.1], arco: [-15, 195], escala: [0.9, 1.6], velocidad: 0.35, gris_lluvia: 0.3}
   fondo_bajo: 0.35            # debajo del horizonte: mezcla horizonte→cenit (la maqueta flota en el cielo)
   lluvia: {gotas: 900, alto: 9, velocidad: 14, transicion: 0.5, opacidad: 0.55}
@@ -367,6 +375,9 @@ vista_3d:                     # python main.py --vista 3d / duelo3d (vistas/vist
     hambre: {saciado: "#5cc96b", medio: "#f2c14e", hambre: "#ff5a4e"}   # relleno del ícono del habitante
     estado_habitante: {bien: "#ffffff", durmiendo: "#3c4560", esperando: "#3fb6ff", cocinando: "#ff9f43",
                        afuera: "#b07cf0", hambre: "#ff3b3b"}                 # aro del ícono
+    barra_vacia: "#3a404c"      # barras del panel de detalle: la parte vacía,
+    barra_energia: "#7fc8ff"    # la energía del habitante
+    barra_fogones: "#eda100"    # y los fogones ocupados del restaurante
     masa: "#e0a95b"
     queso: "#ffd35c"
     pepperoni: "#c0392b"

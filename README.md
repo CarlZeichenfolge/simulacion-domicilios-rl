@@ -52,6 +52,7 @@ por segundo real y no por cuadro, así que se ve igual en cualquier computador (
 Controles de la vista 2D: `ESPACIO` pausa, `↑/↓` velocidad, `D` un minuto, `ESC` salir.
 Duelos: `ESPACIO` pausa, `↑/↓` velocidad, `M` marcador, `ESC` salir (en 3D, además, clic derecho gira, la rueda hace zoom, `C` gira la cámara sola y `N` salta al día siguiente).
 Vista 3D (`--vista 3d`): clic derecho + arrastrar gira la cámara, rueda hace zoom, `C` cámara automática, `ESPACIO` pausa, `↑/↓` velocidad, `N` día siguiente.
+En las dos vistas 3D, clic izquierdo en un habitante, una moto o un restaurante abre su panel de detalle (ver abajo).
 
 Las demos siguen **una semana** (`vistas.dias_demo`; `python main.py --vista duelo3d --dias 3` para otro número). Los
 totales del marcador se acumulan durante toda la semana; con `M` se ve cómo van ("HASTA AHORA") y al final aparece
@@ -90,9 +91,31 @@ círculo es su hambre (verde → ámbar → rojo, con el número adentro; "z" si
 (esperando domicilio, cocinando, comiendo afuera). **Clic en el ícono** abre un panel con su cabeza: hambre,
 energía y plata; su última decisión con la utilidad de cada opción que comparó (cocinar, salir, pedir) y cuál
 ganó; si al pedir estaba explorando un restaurante que no era su favorito (el ε del bandit); lo que espera de
-cada restaurante (lo aprendido) y lo que ha comido hoy. `H` oculta los íconos. El habitante solo guarda su
-última decisión para poder explicarla (`Habitante.ultima_decision`); no cambia nada de la simulación. Colores, horas y cantidades: `vista_3d` en
-`config/base.yaml`; si tu pantalla la ve oscura, sube `vista_3d.exposicion`.
+cada restaurante (lo aprendido) y lo que ha comido hoy. También **qué sigue**: a qué hora le dará hambre (con
+su horario y lo rápido que le da hambre en cada actividad), qué escogería si decidiera ya, a qué hora despierta
+o termina de comer, y cómo aprenderá del pedido que espera. `H` oculta los íconos.
+
+**Clic en una moto** abre el panel del repartidor: qué está haciendo (va al restaurante, espera en la puerta,
+lleva el pedido, rechazó y espera), cuántas cuadras y minutos le faltan por su ruta A* (y la ruta se dibuja en
+la ciudad), si el pedido alcanza a llegar antes de los 60 minutos, cuánto va a cobrar y qué recompensa verá.
+De su última decisión muestra los pedidos que vio, con el **valor Q que les dio la tabla o la red** (y el de
+esperar), cuál escogió y si fue exploración; también el resultado de su última acción, su **plata** (lo que
+cobró menos gasolina, tiempo y multas) y sus **pedidos**: cuántos entregó, canceló y rechazó, y los últimos.
+
+**Clic en un restaurante** abre su cocina: fogones ocupados, cada pedido en el fogón (cuánto lleva y qué moto
+viene por él), la fila FIFO (cuándo entra cada uno), los listos que esperan moto, su modelo interno de cuánto
+tardaría un pedido nuevo, la demanda de hoy, lo que los habitantes aprendieron de él, su **plata** (lo vendido:
+solo cobra los pedidos que llegan) y sus últimos **pedidos** entregados o cancelados.
+
+El habitante también muestra su plata (y cuánto lleva gastado en domicilios) y sus pedidos: cuántos hizo,
+cuántos le llegaron y cuántos se cancelaron, y los últimos con lo que tardaron y lo que pagó.
+
+Otro clic en el mismo agente cierra el panel. Para explicarse, los agentes guardan su última decisión
+(`Habitante.ultima_decision`, `Repartidor.ultima_decision` y `Repartidor.ultimo_resultado`), y las políticas
+que aprenden calculan sus valores con `valorar()`, que no gasta azar ni aprende: nada de esto cambia la
+simulación (`tests/test_detalle_agentes.py` lo comprueba). Los textos salen de `vistas/detalle_*.py`, sin Ursina.
+Colores, horas y cantidades: `vista_3d` en `config/base.yaml` (el panel: `vista_3d.detalle`); si tu pantalla
+la ve oscura, sube `vista_3d.exposicion`.
 
 ## Estructura
 

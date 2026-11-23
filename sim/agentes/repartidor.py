@@ -46,6 +46,15 @@ class Repartidor(AgenteBase):
         self._decision: tuple[dict, dict, int] | None = None  # (percepción, acción, tick)
         self._espera_hasta: int | None = None
         self._percepcion: dict | None = None
+        # Lo que vio y escogió la última vez que la política decidió, y cómo le fue a la
+        # última acción cerrada. Solo para explicarlo en la vista 3D: no cambia ninguna decisión.
+        self.ultima_decision: dict | None = None
+        self.ultimo_resultado: dict | None = None
+
+    @property
+    def espera_hasta(self) -> int | None:
+        """Tick en que termina la espera (rechazo) en curso, o None si no está esperando."""
+        return self._espera_hasta
 
     # ------------------------------------------------------------------ ciclo
     def step(self) -> None:
@@ -92,7 +101,10 @@ class Repartidor(AgenteBase):
         if not percepcion["pedidos"]:
             # Sin pedidos la única acción legal es quedarse: no hay nada que decidir ni aprender.
             return {"tipo": "inactivo"}
-        return self.politica.elegir(percepcion)
+        accion = self.politica.elegir(percepcion)
+        self.ultima_decision = {"tick": self.t, "minuto_del_dia": self.model.reloj.minuto_del_dia,
+                                "percepcion": percepcion, "accion": accion}
+        return accion
 
     def actuar(self, accion: dict) -> None:
         tipo = accion["tipo"]
@@ -174,23 +186,24 @@ class Repartidor(AgenteBase):
         costo = self.costo_por_minuto * minutos
         self.costos += costo
         self._liberar()
-        self._cerrar_decision(pedido.pago_repartidor - costo, minutos)
+        self._cerrar_decision(pedido.pago_repartidor - costo, minutos, "entrego", pedido)
 
     def _cerrar_acciones_terminadas(self) -> None:
         if self.pedido is not None and self.pedido.estado == EstadoPedido.CANCELADO:
+            pedido = self.pedido
             minutos = self.t - self._decision[2]
             costo = self.costo_por_minuto * minutos
             self.costos += costo
             self.cancelaciones += 1
             self._liberar()
-            self._cerrar_decision(-(self.penalizacion_cancelado + costo), minutos)
+            self._cerrar_decision(-(self.penalizacion_cancelado + costo), minutos, "cancelado", pedido)
         elif self._espera_hasta is not None and self.t >= self._espera_hasta:
             # Solo se elige esperar si había pedidos, así que siempre es un rechazo.
             self._espera_hasta = None
             costo = self.costo_espera_por_minuto * self.duracion_espera + self.penalizacion_rechazo
             self.costos += costo
             self.rechazos += 1
-            self._cerrar_decision(-costo, self.duracion_espera)
+            self._cerrar_decision(-costo, self.duracion_espera, "espero", None)
 
     def _liberar(self) -> None:
         self.pedido = None
@@ -201,12 +214,14 @@ class Repartidor(AgenteBase):
     def _abrir_decision(self, accion: dict) -> None:
         self._decision = (self._percepcion, accion, self.t)
 
-    def _cerrar_decision(self, recompensa_pesos: float, minutos: int) -> None:
+    def _cerrar_decision(self, recompensa_pesos: float, minutos: int, motivo: str, pedido: Pedido | None) -> None:
         """Convierte el resultado de la acción en recompensa y se la pasa a la política."""
         percepcion, accion, _ = self._decision
         self._decision = None
         recompensa = recompensa_pesos * self.escala
         self.recompensa_acumulada += recompensa
+        self.ultimo_resultado = {"tick": self.t, "motivo": motivo, "pedido": pedido, "pesos": recompensa_pesos,
+                                 "recompensa": recompensa, "minutos": minutos}
         self.politica.aprender(percepcion, accion, recompensa, self.percibir(), max(1, minutos))
 
     # ------------------------------------------------------------------ vista

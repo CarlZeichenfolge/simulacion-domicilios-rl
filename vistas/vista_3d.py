@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import math
 import random
+import re
 
 from sim.agentes import EstadoRepartidor
 from sim.model import CiudadModel
@@ -27,8 +28,8 @@ from sim.pedidos import EstadoPedido
 from sim.reloj import MINUTOS_POR_HORA
 from vistas.ciclo_dia import estado_cielo
 from vistas.geometria import Malla, hex_a_color, mezclar
-from vistas.maqueta_3d import (ANCHO_CALLE, ESCALA, LARGO_CARRIL, PROFUNDIDAD_DIORAMA, Maqueta, malla_icono,
-                               malla_lluvia, malla_moto, malla_nube, malla_pin, malla_trancones)
+from vistas.maqueta_3d import (ANCHO_CALLE, ESCALA, LADO_LOTE, LARGO_CARRIL, PROFUNDIDAD_DIORAMA, Maqueta,
+                               malla_icono, malla_lluvia, malla_moto, malla_nube, malla_pin, malla_trancones)
 from vistas.marcador import texto_marcador
 from vistas.velocidad import Velocidad, dias_del_episodio, saltar_al_dia_siguiente
 
@@ -227,40 +228,101 @@ def color_hambre(cfg: dict, hambre: float, umbral: float) -> tuple:
     return mezclar(c["medio"], c["hambre"], (hambre - umbral) / max(1.0, 100 - umbral))
 
 
-class PanelHabitante:
-    """Panel con lo que piensa el habitante al que se le dio clic.
+_ETIQUETA = re.compile(r"<[^>]*>")
 
-    Por qué un panel y no un letrero sobre su casa: son una docena de líneas (cómo está,
-    qué comparó, qué escogió, qué aprendió); en 3D taparía media ciudad.
+
+def envolver(linea: str, ancho: int) -> list[str]:
+    """Parte una línea larga en varias de a lo sumo `ancho` letras VISIBLES.
+
+    Por qué contar sin etiquetas: "<rgb(0.9,0.9,0.9)>" son 18 letras que no se ven.
+    Las continuaciones van con sangría; el color sigue igual porque en Ursina una
+    etiqueta vale hasta la siguiente, aunque haya saltos de línea en medio.
+    """
+    def visible(texto: str) -> int:
+        return len(_ETIQUETA.sub("", texto))
+
+    if visible(linea) <= ancho:
+        return [linea]
+    palabras = linea.split(" ")
+    lineas, actual = [], palabras[0]
+    for palabra in palabras[1:]:
+        if visible(actual) + 1 + visible(palabra) > ancho and visible(actual.strip()) > 0:
+            lineas.append(actual)
+            actual = "  " + palabra
+        else:
+            actual += " " + palabra
+    lineas.append(actual)
+    return lineas
+
+
+class PanelDetalle:
+    """Panel con lo que hace y piensa el agente al que se le dio clic: habitante, repartidor
+    o restaurante.
+
+    Por qué un panel y no letreros en la ciudad: son una docena de líneas (qué hace, qué
+    comparó, qué viene, qué aprendió); en 3D taparían media ciudad. Uno solo para los tres
+    tipos: así nunca quedan dos abiertos tapándose.
     """
 
     def __init__(self, cfg: dict, margen_y: float):
         self.cfg = cfg
-        self.panel = Panel(cfg["hud"], "arriba_der", escala=0.78, margen=(0.02, margen_y), titulo="",
+        self.cd = cfg["detalle"]
+        self.panel = Panel(cfg["hud"], "arriba_der", escala=self.cd["escala"], margen=(0.02, margen_y), titulo="",
                            escala_titulo=1.25)
         self.panel.habilitado = False
         self.vista = None
-        self.habitante = None
+        self.agente = None
 
-    def seleccionar(self, vista, habitante) -> None:
-        """Clic en un ícono: lo abre; clic otra vez en el mismo: lo cierra."""
-        if self.habitante is habitante:
+    def seleccionar(self, vista, agente) -> None:
+        """Clic en un agente: lo abre; clic otra vez en el mismo: lo cierra."""
+        if self.agente is agente:
             self.cerrar()
             return
-        self.vista, self.habitante = vista, habitante
+        self.vista, self.agente = vista, agente
         self.panel.habilitado = True
 
     def cerrar(self) -> None:
-        self.vista = self.habitante = None
+        self.vista = self.agente = None
         self.panel.habilitado = False
 
     def actualizar(self) -> None:
-        if self.habitante is None:
+        if self.agente is None:
             return
+        from sim.agentes.habitante import Habitante
+        from sim.agentes.repartidor import Repartidor
+        hud = self.cfg["hud"]
+        self.s, self.t, self.a = etiqueta(hud["suave"]), etiqueta(hud["texto"]), etiqueta(hud["acento"])
+        if isinstance(self.agente, Habitante):
+            lineas, titulo = self._habitante(self.agente)
+        elif isinstance(self.agente, Repartidor):
+            lineas, titulo = self._repartidor(self.agente)
+        else:
+            lineas, titulo = self._restaurante(self.agente)
+        if self.vista.titulo:  # en el duelo: de cuál de las dos ciudades es
+            titulo += f"  ·  {etiqueta(self.vista.color_titulo)}{self.vista.titulo.split(':')[0]}"
+        lineas += ["", f"{self.s}(clic otra vez en él para cerrar)"]
+        ancho = self.cd["ancho_texto"]
+        cortas = [corta for linea in "\n".join(lineas).split("\n") for corta in envolver(linea, ancho)]
+        self.panel.poner("\n".join(cortas), titulo=titulo)
+
+    def _barra(self, fraccion: float, hex_lleno: str) -> str:
+        return barra(fraccion, self.cd["ancho_barra"], hex_lleno, self.cfg["colores"]["barra_vacia"])
+
+    def _filas(self, encabezado: str, filas: list[str], vacio: str) -> list[str]:
+        """Una sección con a lo sumo max_filas filas; las demás se cuentan."""
+        s, t, maximo = self.s, self.t, self.cd["max_filas"]
+        if not filas:
+            return [f"{s}{encabezado} {t}{vacio}"]
+        lineas = [f"{s}{encabezado}"] + [f"{t}  {f}" for f in filas[:maximo]]
+        if len(filas) > maximo:
+            lineas.append(f"{s}  y {len(filas) - maximo} más")
+        return lineas
+
+    # ------------------------------------------------------------ habitante
+    def _habitante(self, h) -> tuple[list[str], str]:
         from vistas import detalle_habitante as d
-        h, cfg = self.habitante, self.cfg
-        hud, ch = cfg["hud"], cfg["habitantes"]
-        s, t, a = etiqueta(hud["suave"]), etiqueta(hud["texto"]), etiqueta(hud["acento"])
+        cfg = self.cfg
+        s, t, a = self.s, self.t, self.a
         umbral = h.cfg["umbral_hambre"]
         frase, clave = d.estado(h)
         tinte_hambre = "#{:02x}{:02x}{:02x}".format(*(int(x * 255) for x in color_hambre(cfg, h.hambre, umbral)[:3]))
@@ -268,36 +330,92 @@ class PanelHabitante:
             f"{etiqueta(cfg['colores']['estado_habitante'][clave])}{frase}",
             f"{s}Ahora está {d.describir_actividad(h)}",
             "",
-            f"{s}Hambre   {barra(h.hambre / 100, ch['ancho_barra'], tinte_hambre, '#3a404c')}  "
-            f"{t}{h.hambre:.0f}{s} / 100  (busca comida desde {umbral})",
-            f"{s}Energía  {barra(h.energia / 100, ch['ancho_barra'], '#7fc8ff', '#3a404c')}  "
+            f"{s}Hambre   {self._barra(h.hambre / 100, tinte_hambre)}  "
+            f"{t}{h.hambre:.0f}{s} / 100  (come desde {umbral})",
+            f"{s}Energía  {self._barra(h.energia / 100, cfg['colores']['barra_energia'])}  "
             f"{t}{h.energia:.0f}{s} / 100",
-            f"{s}Plata    {t}${h.dinero / 1000:.1f}k",
+            f"{s}Plata    {t}{d.plata(self.vista.modelo, h)}",
             "",
-            f"{s}Última decisión {d.frase_decision(h.ultima_decision, a)}",
+            f"{a}Qué sigue: {t}{d.que_sigue(h)}",
         ]
-        # Corto a propósito: lo que comparó, lo que espera de cada restaurante y lo de hoy.
+        if h.pedido is None and h.comida_en_curso is None and h.actividad != "dormir":
+            ahora = d.opciones_ahora(h)
+            if ahora:
+                lineas.append(self._opciones(ahora, "Si decidiera ya:  "))
+        lineas += ["", f"{s}Última decisión {d.frase_decision(h.ultima_decision, a)}"]
         if h.ultima_decision and h.ultima_decision["opciones"]:
             lineas.append(self._opciones(h.ultima_decision["opciones"], "  "))
         aprendido = d.lo_que_aprendio(h)
         if aprendido:
             favorito = max(aprendido, key=lambda x: x[1])[0]
-            lineas.append(f"{s}Espera de cada restaurante: " + "  ".join(
-                f"{a if n == favorito else t}{n} {v:+.1f}" for n, v, _ in aprendido))
+            lineas.append(f"{s}Espera de cada restaurante (veces que le pidió): " + "  ".join(
+                f"{a if n == favorito else t}{n} {v:+.1f}{s} ({veces})" for n, v, veces in aprendido))
         lineas.append(f"{s}Hoy: {t}{'   '.join(d.comidas_de_hoy(self.vista.modelo, h)) or 'nada todavía'}")
-        titulo = f"{a}Habitante {h.unique_id}{s}  ·  {h.tipo}"
-        if self.vista.titulo:
-            titulo += f"  ·  {etiqueta(self.vista.color_titulo)}{self.vista.titulo.split(':')[0]}"
-        self.panel.poner("\n".join(lineas), titulo=titulo)
+        modelo = self.vista.modelo
+        lineas += self._pedidos(d.resumen_pedidos(modelo, h), d.lista_pedidos(modelo, h), "no ha pedido domicilios")
+        return lineas, f"{a}Habitante {h.unique_id}{s}  ·  {h.tipo}"
+
+    def _pedidos(self, resumen: str, filas: list[str], vacio: str) -> list[str]:
+        """Cuántos pedidos lleva y los últimos (max_pedidos), el más reciente primero."""
+        s, t, a, maximo = self.s, self.t, self.a, self.cd["max_pedidos"]
+        if not filas:
+            return ["", f"{a}Pedidos: {t}{vacio}"]
+        lineas = ["", f"{a}Pedidos: {t}{resumen}"] + [f"{s}  {f}" for f in filas[:maximo]]
+        if len(filas) > maximo:
+            lineas.append(f"{s}  y {len(filas) - maximo} más antes")
+        return lineas
 
     def _opciones(self, opciones: dict, prefijo: str) -> str:
         """Las utilidades en fila; la que gana, resaltada."""
         from vistas.detalle_habitante import NOMBRE_CORTO
-        hud = self.cfg["hud"]
         mejor = max(opciones, key=opciones.get)
-        partes = [f"{etiqueta(hud['acento'] if k == mejor else hud['texto'])}{NOMBRE_CORTO[k]} {v:+.1f}"
-                  for k, v in opciones.items()]
-        return f"{etiqueta(hud['suave'])}{prefijo}" + "   ".join(partes)
+        partes = [f"{self.a if k == mejor else self.t}{NOMBRE_CORTO[k]} {v:+.1f}" for k, v in opciones.items()]
+        return f"{self.s}{prefijo}" + "   ".join(partes)
+
+    # ------------------------------------------------------------ repartidor
+    def _repartidor(self, r) -> tuple[list[str], str]:
+        from vistas import detalle_repartidor as d
+        s, t, a = self.s, self.t, self.a
+        frase, clave = d.estado(r)
+        lineas = [f"{etiqueta(self.cfg['colores']['repartidor'][clave])}{frase}"]
+        lineas += [f"{s}{linea}" for linea in d.trayecto(r)]
+        lineas += [f"{a}Qué sigue: {t}{d.que_sigue(r)}", ""]
+        explorando = f"  {a}(exploró: no fue la de mayor Q)" if d.exploro(r) else ""
+        lineas.append(f"{s}Última decisión {d.encabezado_decision(r)}{explorando}")
+        filas, sobran = d.opciones(r, self.cd["max_opciones"])
+        if filas:
+            lineas.append(f"{s}  (cuadras: hasta el restaurante + hasta el cliente)")
+        for f in filas:
+            marca = f"{a}> " if f["escogida"] else f"{t}  "
+            valor = "" if f["valor"] is None else f"   {a if f['escogida'] else s}Q {f['valor']:+.2f}"
+            lineas.append(f"  {marca}{f['texto']}{valor}")
+        if sobran:
+            lineas.append(f"{s}    y {sobran} más")
+        if any(f["valor"] is not None for f in filas):
+            lineas.append(f"{s}  {d.QUE_ES_Q}")
+        lineas += [f"{s}Último resultado {t}{d.frase_resultado(r)}", "", f"{a}Plata: {t}{d.plata(r)}"]
+        lineas += self._pedidos(d.balance(r), d.lista_pedidos(r), "todavía no ha terminado ninguno")
+        return lineas, f"{a}Repartidor {r.unique_id}{s}  ·  política {d.politica(r)}"
+
+    # ----------------------------------------------------------- restaurante
+    def _restaurante(self, rest) -> tuple[list[str], str]:
+        from vistas import detalle_restaurante as d
+        s, t, a = self.s, self.t, self.a
+        ocupados, fogones = d.ocupacion(rest)
+        lineas = [f"{s}Fogones  {self._barra(ocupados / fogones, self.cfg['colores']['barra_fogones'])}  "
+                  f"{t}{ocupados}{s}/{fogones} ocupados · {t}{len(d.esperando_fogon(rest))}{s} en fila",
+                  f"{s}{d.ficha(rest)}", f"{s}{d.espera_nueva(rest)}", ""]
+        lineas += self._filas("En el fogón:", d.en_cocina(rest), "nada")
+        lineas += self._filas("En la fila (el más viejo entra primero):", d.en_cola(rest), "nadie")
+        lineas += self._filas("Listos, esperando moto:", d.listos(rest), "ninguno")
+        lineas += ["", f"{s}{d.hoy(rest)}"]
+        opinion = d.opinion(rest)
+        if opinion:
+            lineas.append(f"{s}{opinion}")
+        lineas += ["", f"{a}Plata: {t}{d.plata(rest)}"]
+        lineas += self._pedidos(d.resumen_pedidos(rest), d.lista_pedidos(rest), "ninguno terminado todavía")
+        color = self.cfg["colores"]["restaurantes"][rest.nombre]
+        return lineas, f"{etiqueta(color)}{rest.nombre}{s}  ·  restaurante"
 
 
 # ------------------------------------------------------------- cielo, sol y clima
@@ -456,7 +574,9 @@ class Vista3D:
         self.ambiente: Ambiente | None = None
         self.iconos_habitante: dict[int, dict] = {}
         self.mostrar_habitantes = True
-        self.panel_habitante: PanelHabitante | None = None  # lo pone quien arma el HUD (una o dos ciudades)
+        self.panel_detalle: PanelDetalle | None = None  # lo pone quien arma el HUD (una o dos ciudades)
+        self.linea_ruta = None
+        self._clave_ruta = None
 
     # ------------------------------------------------------------ coordenadas
     def mundo(self, x: float, y: float, altura: float = 0.0):
@@ -515,7 +635,12 @@ class Vista3D:
             x, y, z = datos["centro"]
             icono = Entity(model=a_malla_ursina(malla_icono(nombre, self.col)), shader=sombreado.iluminado,
                            position=(x, y + ci["altura"], z), scale=ci["escala"])
-            self.iconos.append(icono)
+            # Zona de clic invisible del suelo hasta el ícono: más fácil de atinar que el ícono que gira.
+            alto_clic = y + ci["altura"] + ci["escala"]
+            clic = Entity(position=(x, alto_clic / 2, z), scale=(LADO_LOTE, alto_clic, LADO_LOTE), collider="box")
+            restaurante = self.modelo.restaurantes[nombre]
+            clic.on_click = lambda rest=restaurante: self.panel_detalle and self.panel_detalle.seleccionar(self, rest)
+            self.iconos.append({"icono": icono, "clic": clic, "restaurante": restaurante, "escala": ci["escala"]})
             anillo = Malla()
             anillo.anillo_suelo((x, 0.06, z), 0.62, 0.72, 24, self.col["restaurantes"][nombre])
             e = Entity(model=a_malla_ursina(anillo), shader=sombreado.emisivo)
@@ -556,7 +681,7 @@ class Vista3D:
         self.panel_der = Panel(h, "arriba_der", escala=0.95)
         self.panel_leyenda = Panel(h, "abajo_izq", escala=0.8)
         self.panel_leyenda.poner(self.leyenda())
-        self.panel_habitante = PanelHabitante(self.cfg, self.cfg["habitantes"]["margen_panel"])
+        self.panel_detalle = PanelDetalle(self.cfg, self.cfg["detalle"]["margen_panel"])
 
     def leyenda(self) -> str:
         h, r, p = self.cfg["hud"], self.cfg["colores"]["repartidor"], self.cfg["colores"]["pedido"]
@@ -567,8 +692,9 @@ class Vista3D:
                 f"{etiqueta(p['listo'])}listo   {etiqueta(p['en_camino'])}en camino   "
                 f"{etiqueta(p['urgente'])}a punto de cancelarse   {s}Rojo en la calle: trancón\n"
                 f"{s}Habitantes: el círculo es su hambre ({etiqueta(self.col_hex('hambre')['saciado'])}saciado"
-                f"{s} a {etiqueta(self.col_hex('hambre')['hambre'])}con hambre{s}); clic en uno para ver "
-                f"qué decide\n"
+                f"{s} a {etiqueta(self.col_hex('hambre')['hambre'])}con hambre{s})\n"
+                f"{etiqueta(h['acento'])}Clic en un habitante, una moto o un restaurante{s}: qué hace, qué decide "
+                f"y por qué\n"
                 f"{s}{AYUDA}")
 
     # ---------------------------------------------------------------- entrada
@@ -586,8 +712,10 @@ class Vista3D:
 
     def alternar_habitantes(self) -> None:
         self.mostrar_habitantes = not self.mostrar_habitantes
-        if not self.mostrar_habitantes and self.panel_habitante is not None:
-            self.panel_habitante.cerrar()
+        from sim.agentes.habitante import Habitante
+        if (not self.mostrar_habitantes and self.panel_detalle is not None
+                and isinstance(self.panel_detalle.agente, Habitante)):
+            self.panel_detalle.cerrar()
 
     def saltar_dia(self) -> None:
         """Tecla N: a la mañana siguiente sin dibujar la noche."""
@@ -601,7 +729,7 @@ class Vista3D:
         estado = self.ambiente.actualizar(self.minuto_suave(), self.modelo.eventos.lloviendo, self.pausa)
         self.dibujar(self.velocidad.fraccion, estado, self.ambiente.lluvia)
         self._textos()
-        self.panel_habitante.actualizar()
+        self.panel_detalle.actualizar()
 
     def minuto_suave(self) -> float:
         """El minuto del día con la fracción del siguiente: el sol se mueve sin saltos."""
@@ -625,6 +753,7 @@ class Vista3D:
             brillo = tenue + (1 - tenue) * estado["noche"]
             self.trancones[2].color = color_ursina((brillo, brillo, brillo, 1))
         self._repartidores(fraccion, estado["noche"])
+        self._ruta_elegida()
         self._avisar_rechazos()
         self._pedidos()
         self._lluvia(lluvia)
@@ -642,10 +771,25 @@ class Vista3D:
         self.halos.color = color_ursina((r, g, b, noche))
         self.halos.enabled = noche > 0.02
 
+    def _elegido(self):
+        """El agente cuyo panel está abierto, si es de ESTA ciudad (en el duelo hay dos)."""
+        p = self.panel_detalle
+        return p.agente if p is not None and p.vista is self else None
+
     def _iconos(self) -> None:
-        from ursina import time
-        for icono in self.iconos:
+        """Giran siempre; el del restaurante elegido (o bajo el mouse) se agranda y late."""
+        from ursina import mouse, time
+        elegido = self._elegido()
+        agrandar = self.cfg["detalle"]["agrandar"]
+        for datos in self.iconos:
+            icono = datos["icono"]
             icono.rotation_y += self.cfg["icono"]["giro"] * min(time.dt, 0.1)
+            seleccionado = datos["restaurante"] is elegido
+            grande = seleccionado or mouse.hovered_entity is datos["clic"]
+            pulso = 1 + 0.08 * math.sin(time.time() * 6) if seleccionado else 1
+            escala = datos["escala"] * (agrandar if grande else 1) * pulso
+            if escala != icono.scale_x:
+                icono.scale = escala
 
     # ------------------------------------------------------------ avisos
     def avisar(self, clave, texto: str, posicion, hex_color: str) -> None:
@@ -713,10 +857,14 @@ class Vista3D:
             self.trancones = (Entity(model=a_malla_ursina(franja), shader=s.iluminado),
                               Entity(model=a_malla_ursina(carros), shader=s.trafico), e_luces)
 
-    def _nueva_moto(self) -> dict:
+    def _nueva_moto(self, r) -> dict:
+        """La moto, y una caja invisible un poco más grande que ella para poder darle clic."""
         from ursina import Entity
         cuerpo, baliza, faro = self.mallas_moto
         raiz = Entity(scale=self.cfg["escala_moto"])
+        ancho, alto, largo = self.cfg["detalle"]["caja_moto"]
+        clic = Entity(parent=raiz, y=alto / 2, scale=(ancho, alto, largo), collider="box")
+        clic.on_click = lambda: self.panel_detalle and self.panel_detalle.seleccionar(self, r)
         Entity(parent=raiz, model=a_malla_ursina(cuerpo), shader=self._sombreado.iluminado)
         e_baliza = Entity(parent=raiz, model=a_malla_ursina(baliza), shader=self._sombreado.emisivo)
         e_faro = Entity(parent=raiz, model=a_malla_ursina(faro), shader=self._sombreado.emisivo)
@@ -725,19 +873,27 @@ class Vista3D:
         e_aro = Entity(parent=raiz, model=a_malla_ursina(aro), shader=self._sombreado.emisivo)
         e_aro.hide(MASCARA_SOMBRA)
         e_faro.hide(MASCARA_SOMBRA)
-        return {"raiz": raiz, "baliza": e_baliza, "faro": e_faro, "aro": e_aro, "rumbo": None,
-                "lateral": (0.0, 0.0)}
+        return {"raiz": raiz, "clic": clic, "baliza": e_baliza, "faro": e_faro, "aro": e_aro, "rumbo": None,
+                "lateral": (0.0, 0.0), "escala": self.cfg["escala_moto"]}
 
     def _repartidores(self, fraccion: float, noche: float) -> None:
         """Cada moto va por su carril derecho y gira suave hacia donde va; la baliza sobre la
-        mochila y el aro en el piso dicen su estado."""
-        from ursina import time
+        mochila y el aro en el piso dicen su estado. La elegida (o bajo el mouse) se agranda."""
+        from ursina import mouse, time
         dt = min(time.dt, 0.1)
         colores = self.col["repartidor"]
+        elegido = self._elegido()
         for r in self.modelo.repartidores:
             moto = self.motos.get(r.unique_id)
             if moto is None:
-                moto = self.motos[r.unique_id] = self._nueva_moto()
+                moto = self.motos[r.unique_id] = self._nueva_moto(r)
+            seleccionada = r is elegido
+            grande = seleccionada or mouse.hovered_entity is moto["clic"]
+            pulso = 1 + 0.08 * math.sin(time.time() * 6) if seleccionada else 1
+            escala = self.cfg["escala_moto"] * (self.cfg["detalle"]["agrandar"] if grande else 1) * pulso
+            if escala != moto["escala"]:
+                moto["escala"] = escala
+                moto["raiz"].scale = escala
             (x1, y1) = r.posicion_continua()
             (x0, y0) = self._anterior.get(r.unique_id, (x1, y1))
             x, y = x0 + (x1 - x0) * fraccion, y0 + (y1 - y0) * fraccion
@@ -761,6 +917,32 @@ class Vista3D:
             moto["aro"].color = color_ursina(tinte)
             moto["faro"].color = color_ursina(mezclar(self.col["foco_dia"], self.col["faro_moto"], noche))
             self._comida_en_moto(r, moto, dt)
+
+    def _ruta_elegida(self) -> None:
+        """Si el panel muestra un repartidor de esta ciudad, una línea con las calles que le faltan.
+
+        Por qué: el panel dice "le faltan 6 cuadras por la ruta más rápida (A*)"; la línea
+        deja VER esa ruta, y cómo cambia cuando entra un trancón y la recalcula.
+        Se rehace solo cuando cambia la ruta (no en cada cuadro).
+        """
+        from sim.agentes.repartidor import Repartidor
+        from ursina import Entity, Mesh, destroy
+        from ursina.shaders import unlit_shader
+        r = self._elegido()
+        clave = (r.unique_id, r.nodo, tuple(r.ruta), r.estado) if isinstance(r, Repartidor) and r.ruta else None
+        if clave == self._clave_ruta:
+            return
+        self._clave_ruta = clave
+        if self.linea_ruta is not None:
+            destroy(self.linea_ruta)
+            self.linea_ruta = None
+        if clave is None:
+            return
+        cr = self.cfg["detalle"]["ruta"]
+        puntos = [self.mundo(x, y, cr["altura"]) for x, y in [r.nodo] + r.ruta]
+        self.linea_ruta = Entity(model=Mesh(vertices=puntos, mode="line", thickness=cr["grosor"]),
+                                 shader=unlit_shader, color=color_ursina(self.col["repartidor"][r.estado.value]))
+        self.linea_ruta.hide(MASCARA_SOMBRA)
 
     def _comida_en_moto(self, r, moto: dict, dt: float) -> None:
         """Si la moto lleva un pedido, encima flota la comida de ese restaurante.
@@ -850,7 +1032,7 @@ class Vista3D:
         for e in (aro, fondo):
             e.setTransparency(True)
         raiz.hide(MASCARA_SOMBRA)
-        fondo.on_click = lambda: self.panel_habitante and self.panel_habitante.seleccionar(self, h)
+        fondo.on_click = lambda: self.panel_detalle and self.panel_detalle.seleccionar(self, h)
         return {"raiz": raiz, "aro": aro, "fondo": fondo, "texto": texto, "habitante": h,
                 "aspecto": None, "escala": None}
 
@@ -876,7 +1058,7 @@ class Vista3D:
             self._minuto_iconos = self.modelo.reloj.tick
             self._ubicar_iconos()
         ch = self.cfg["habitantes"]
-        elegido = self.panel_habitante.habitante if self.panel_habitante else None
+        elegido = self._elegido()
         for icono in self.iconos_habitante.values():
             seleccionado = icono["habitante"] is elegido
             grande = seleccionado or mouse.hovered_entity is icono["fondo"]
@@ -1032,8 +1214,8 @@ class VistaDuelo3D:
         self.panel_leyenda = Panel(h, "abajo_izq", escala=0.8)
         self.panel_leyenda.poner(self.der.leyenda() + "   M: marcador")
         # Un solo panel para las dos ciudades: el mismo habitante existe en ambas (mismas semillas)
-        self.panel_habitante = PanelHabitante(self.cfg3d, self.cfg3d["habitantes"]["margen_panel_duelo"])
-        self.izq.panel_habitante = self.der.panel_habitante = self.panel_habitante
+        self.panel_detalle = PanelDetalle(self.cfg3d, self.cfg3d["detalle"]["margen_panel_duelo"])
+        self.izq.panel_detalle = self.der.panel_detalle = self.panel_detalle
         # Marcador final: fuente monoespaciada para que las columnas queden alineadas, sobre
         # un panel oscuro casi opaco para que la ciudad de atrás no estorbe al leer.
         self.fondo_marcador = Entity(parent=camera.ui, model="quad", color=color.rgba(0.06, 0.07, 0.1, 0.94),
@@ -1070,7 +1252,7 @@ class VistaDuelo3D:
         estado = self.ambiente.actualizar(self.der.minuto_suave(), m_der.eventos.lloviendo, self.pausa)
         for vista in (self.izq, self.der):
             vista.dibujar(self.velocidad.fraccion, estado, self.ambiente.lluvia)
-        self.panel_habitante.actualizar()
+        self.panel_detalle.actualizar()
         h = self.cfg3d["hud"]
         self.panel_izq.poner(self.izq.resumen(), titulo=f"{etiqueta(self.cfg['color_antes'])}{self.titulos[0]}")
         self.panel_der.poner(self.der.resumen(), titulo=f"{etiqueta(self.cfg['color_despues'])}{self.titulos[1]}")

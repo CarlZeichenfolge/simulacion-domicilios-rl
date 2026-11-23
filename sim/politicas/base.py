@@ -36,6 +36,15 @@ class Politica:
     def fin_episodio(self) -> None:
         """Gancho para cosas como bajar epsilon entre episodios."""
 
+    def valorar(self, percepcion: dict) -> list[float] | None:
+        """Valor de cada pedido de la percepción y, al final, de esperar.
+
+        Por qué aparte de elegir(): la vista 3D explica POR QUÉ escogió, y para eso
+        necesita los valores sin gastar azar ni aprender. Las reglas fijas no
+        valoran nada (devuelven None): su "por qué" es la regla misma.
+        """
+        return None
+
 
 # --------------------------------------------------------------- utilidades
 def accion_esperar() -> dict:

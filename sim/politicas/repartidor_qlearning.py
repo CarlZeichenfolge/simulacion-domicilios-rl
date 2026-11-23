@@ -89,6 +89,10 @@ class PoliticaRepartidorQLearning(Politica):
             return accion
         return accion_aceptar(info, indice)
 
+    def valorar(self, percepcion: dict) -> list[float]:
+        valores = self.q[self.estado(percepcion)]
+        return [float(valores[self.tipo_pedido(p)]) for p in percepcion["pedidos"]] + [float(valores[self.ESPERAR])]
+
     # ---------------------------------------------------------------- aprender
     def aprender(self, percepcion, accion, recompensa, nueva_percepcion, duracion=1):
         """Q(s,a) <- Q(s,a) + alpha [r + gamma^k max_a' Q(s',a') - Q(s,a)].

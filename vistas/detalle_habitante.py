@@ -7,6 +7,7 @@ La vista solo le pone colores.
 from __future__ import annotations
 
 from sim.agentes.habitante import ACTIVIDADES_FUERA
+from sim.pedidos import EstadoPedido
 from sim.reloj import MINUTOS_POR_DIA, MINUTOS_POR_HORA
 
 NOMBRE_OPCION = {"cocinar": "Cocinar", "salir": "Salir a comer", "pedir": "Pedir domicilio"}
@@ -93,3 +94,94 @@ def donde(h) -> str:
 
 def describir_actividad(h) -> str:
     return NOMBRE_ACTIVIDAD[h.actividad]
+
+
+def _actividad_en(h, minutos_adelante: int) -> str:
+    minuto = (h.model.reloj.minuto_del_dia + minutos_adelante - h.desfase) % MINUTOS_POR_DIA
+    return h.horario[minuto]
+
+
+def minutos_hasta_despertar(h) -> int | None:
+    for k in range(1, MINUTOS_POR_DIA):
+        if _actividad_en(h, k) != "dormir":
+            return k
+    return None
+
+
+def minutos_hasta_hambre(h) -> int | None:
+    """Cuándo cruzará el umbral DESPIERTO, siguiendo su horario y lo rápido que le da
+    hambre en cada actividad. Dormido no decide: si cruza durmiendo, decide al despertar."""
+    hambre, umbral = h.hambre, h.cfg["umbral_hambre"]
+    for k in range(1, MINUTOS_POR_DIA):
+        actividad = _actividad_en(h, k)
+        hambre += h.cfg["tasa_hambre"][actividad]
+        if hambre >= umbral and actividad != "dormir":
+            return k
+    return None
+
+
+def pesos(valor: float) -> str:
+    """$80, $6.3k o −$4.1k: los costos por minuto son pocos pesos y en miles saldrían como $0.1k."""
+    signo = "−" if valor < 0 else ""
+    valor = abs(valor)
+    return f"{signo}${valor:.0f}" if valor < 1000 else f"{signo}${valor / 1000:.1f}k"
+
+
+def pedidos_de(modelo, h) -> list:
+    """Todos los domicilios que ha pedido desde que arrancó la demo, el más reciente primero."""
+    return [p for p in reversed(modelo.pedidos) if p.habitante is h]
+
+
+def plata(modelo, h) -> str:
+    """Lo que tiene y lo que se ha gastado en domicilios (solo paga los que le llegan)."""
+    tarifa = modelo.cfg["pedidos"]["tarifa_domicilio"]
+    gasto = sum(p.precio + tarifa for p in pedidos_de(modelo, h) if p.estado == EstadoPedido.ENTREGADO)
+    return f"{pesos(h.dinero)}  (lleva {pesos(gasto)} gastados en domicilios)"
+
+
+def resumen_pedidos(modelo, h) -> str:
+    pedidos = pedidos_de(modelo, h)
+    entregados = sum(p.estado == EstadoPedido.ENTREGADO for p in pedidos)
+    cancelados = sum(p.estado == EstadoPedido.CANCELADO for p in pedidos)
+    en_curso = len(pedidos) - entregados - cancelados
+    return (f"{len(pedidos)} hechos · {entregados} entregados · {cancelados} cancelados"
+            + (f" · {en_curso} en curso" if en_curso else ""))
+
+
+def lista_pedidos(modelo, h) -> list[str]:
+    tarifa = modelo.cfg["pedidos"]["tarifa_domicilio"]
+    lineas = []
+    for p in pedidos_de(modelo, h):
+        if p.estado == EstadoPedido.ENTREGADO:
+            lineas.append(f"#{p.id} {p.restaurante.nombre}: llegó en {p.tiempo_entrega} min, "
+                          f"pagó {pesos(p.precio + tarifa)}")
+        elif p.estado == EstadoPedido.CANCELADO:
+            lineas.append(f"#{p.id} {p.restaurante.nombre}: se canceló a los {p.cancelado - p.creado} min, no pagó")
+        else:
+            lineas.append(f"#{p.id} {p.restaurante.nombre}: {NOMBRE_ESTADO_PEDIDO[p.estado.value]}, "
+                          f"lleva {p.edad(h.t)} min")
+    return lineas
+
+
+def que_sigue(h) -> str:
+    """Lo próximo que le va a pasar, según su estado y su horario."""
+    ahora = h.model.reloj.minuto_del_dia
+    saciedad = h.cfg["saciedad_comida"]
+    if h.pedido is not None:
+        p = h.pedido
+        maximo = h.model.cfg["pedidos"]["espera_maxima"]
+        castigo = h.cfg["aprendizaje"]["recompensa_cancelado"]
+        return (f"Cuando llegue come (hambre −{saciedad}) y corrige lo que espera de {p.restaurante.nombre} con lo "
+                f"que de verdad tardó y costó. Si pasa de {maximo} min se cancela y lo aprende como {castigo:+.0f}.")
+    if h.comida_en_curso is not None:
+        return (f"Termina a las {hora(h.ocupado_hasta - h.t + ahora)} y su hambre baja a "
+                f"~{max(0.0, h.hambre - saciedad):.0f}.")
+    if h.actividad == "dormir":
+        k = minutos_hasta_despertar(h)
+        return f"Se despierta a las {hora(ahora + k)}." if k else "Duerme todo el día."
+    if h.hambre >= h.cfg["umbral_hambre"]:
+        return "Sigue con hambre hasta que le alcance: a medianoche le entra plata y la energía sube durmiendo."
+    k = minutos_hasta_hambre(h)
+    if k is None:
+        return "No le dará hambre en lo que queda del día."
+    return f"Le dará hambre hacia las {hora(ahora + k)} (en {k} min); ahí compara sus opciones."
